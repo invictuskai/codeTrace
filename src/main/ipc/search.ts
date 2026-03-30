@@ -22,9 +22,9 @@ import {
   validateSessionId,
 } from './guards';
 
-const logger = createLogger('IPC:search');
-
 import type { ServiceContextRegistry } from '../services';
+
+const logger = createLogger('IPC:search');
 
 // Service registry - set via initialize
 let registry: ServiceContextRegistry;
@@ -156,7 +156,7 @@ async function handleFindSessionsByPartialId(
   fragment: string
 ): Promise<FindSessionsByPartialIdResult> {
   try {
-    if (typeof fragment !== 'string' || !isSessionIdFragment(fragment)) {
+    if (!isSessionIdFragment(fragment)) {
       logger.error(`find-sessions-by-partial-id rejected: invalid fragment`);
       return { found: false, results: [] };
     }

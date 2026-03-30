@@ -1193,26 +1193,28 @@ export class ProjectScanner {
         (entry) => entry.isDirectory() && isValidEncodedPath(entry.name)
       );
 
-      // Check project directories in parallel batches for the session file
-      const matches = await this.collectFulfilledInBatches(
-        projectDirs,
-        this.fsProvider.type === 'ssh' ? 8 : 24,
-        async (dir) => {
-          const sessionPath = buildSessionPath(this.projectsDir, dir.name, sessionId);
-          if (await this.fsProvider.exists(sessionPath)) {
-            return dir.name;
-          }
-          return null;
-        }
-      );
+      // Check project directories in batches, stopping as soon as a match is found
+      const batchSize = this.fsProvider.type === 'ssh' ? 8 : 24;
+      for (let i = 0; i < projectDirs.length; i += batchSize) {
+        const batch = projectDirs.slice(i, i + batchSize);
+        const settled = await Promise.allSettled(
+          batch.map(async (dir) => {
+            const sessionPath = buildSessionPath(this.projectsDir, dir.name, sessionId);
+            return (await this.fsProvider.exists(sessionPath)) ? dir.name : null;
+          })
+        );
+        const matchedProjectId = settled
+          .filter((r): r is PromiseFulfilledResult<string | null> => r.status === 'fulfilled')
+          .map((r) => r.value)
+          .find((v) => v !== null);
 
-      const matchedProjectId = matches.find((m) => m !== null);
-      if (matchedProjectId) {
-        const session = await this.getSessionWithOptions(matchedProjectId, sessionId, {
-          metadataLevel: 'light',
-        });
-        if (session) {
-          return { found: true, projectId: matchedProjectId, session };
+        if (matchedProjectId) {
+          const session = await this.getSessionWithOptions(matchedProjectId, sessionId, {
+            metadataLevel: 'light',
+          });
+          if (session) {
+            return { found: true, projectId: matchedProjectId, session };
+          }
         }
       }
 
