@@ -16,6 +16,7 @@ import { createLogger } from '@shared/utils/logger';
 import { useShallow } from 'zustand/react/shallow';
 
 const logger = createLogger('Component:CommandPalette');
+import { isSessionIdFragment, isUUID } from '@shared/utils/sessionIdValidator';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Bot,
@@ -30,12 +31,67 @@ import {
 } from 'lucide-react';
 
 import type { RepositoryGroup, SearchResult } from '@renderer/types/data';
+import type { FindSessionByIdResult, FindSessionsByPartialIdResult } from '@shared/types';
 
 // =============================================================================
 // Search Mode Type
 // =============================================================================
 
 type SearchMode = 'projects' | 'sessions';
+
+// =============================================================================
+// Session ID Match Item (used for both exact and partial matches)
+// =============================================================================
+
+interface SessionIdMatchItemProps {
+  projectName: string;
+  sessionTitle: string;
+  messageCount: number;
+  createdAt: number;
+  sessionId: string;
+  isSelected: boolean;
+  onClick: () => void;
+}
+
+const SessionIdMatchItemInner = ({
+  projectName,
+  sessionTitle,
+  messageCount,
+  createdAt,
+  sessionId,
+  isSelected,
+  onClick,
+}: Readonly<SessionIdMatchItemProps>): React.JSX.Element => (
+  <button
+    onClick={onClick}
+    className={`w-full px-4 py-3 text-left transition-colors ${
+      isSelected ? 'bg-surface-raised' : 'hover:bg-surface-raised/50'
+    }`}
+  >
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 shrink-0 text-green-400">
+        <FileText className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-center gap-2">
+          <FolderGit2 className="size-3 text-blue-400" />
+          <span className="truncate text-xs font-medium text-blue-400">{projectName}</span>
+        </div>
+        <div className="text-sm text-text">
+          {sessionTitle ? sessionTitle.slice(0, 100) : 'Untitled session'}
+        </div>
+        <div className="mt-1 flex items-center gap-3 text-xs text-text-muted">
+          <span>{messageCount} messages</span>
+          <span>&middot;</span>
+          <span>{formatDistanceToNow(new Date(createdAt), { addSuffix: true })}</span>
+        </div>
+        <div className="text-text-muted/60 mt-1 font-mono text-[10px]">{sessionId}</div>
+      </div>
+    </div>
+  </button>
+);
+
+const SessionIdMatchItem = React.memo(SessionIdMatchItemInner);
 
 // =============================================================================
 // Project Search Result Item
@@ -183,7 +239,35 @@ export const CommandPalette = (): React.JSX.Element | null => {
   const [totalMatches, setTotalMatches] = useState(0);
   const [searchIsPartial, setSearchIsPartial] = useState(false);
   const [globalSearchEnabled, setGlobalSearchEnabled] = useState(false);
+  const [sessionIdMatch, setSessionIdMatch] = useState<FindSessionByIdResult | null>(null);
+  const [partialIdMatches, setPartialIdMatches] = useState<
+    FindSessionsByPartialIdResult['results']
+  >([]);
   const latestSearchRequestRef = useRef(0);
+
+  // Memoize query classification to avoid redundant calls per render
+  const queryIsUUID = useMemo(() => isUUID(query), [query]);
+  const queryIsFragment = useMemo(() => isSessionIdFragment(query), [query]);
+  const queryIsSessionId = queryIsUUID || queryIsFragment;
+
+  // Memoize project ID → repo name lookup map
+  const projectNameByWorktreeId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const repo of repositoryGroups) {
+      for (const wt of repo.worktrees) {
+        map.set(wt.id, repo.name);
+      }
+    }
+    return map;
+  }, [repositoryGroups]);
+
+  // Memoize repository name lookup for the selected project
+  const selectedProjectName = useMemo(
+    () =>
+      (selectedProjectId ? projectNameByWorktreeId.get(selectedProjectId) : undefined) ??
+      'Current project',
+    [projectNameByWorktreeId, selectedProjectId]
+  );
 
   // Determine search mode based on whether a project is selected OR global search is enabled
   const searchMode: SearchMode = selectedProjectId || globalSearchEnabled ? 'sessions' : 'projects';
@@ -206,7 +290,15 @@ export const CommandPalette = (): React.JSX.Element | null => {
   }, [repositoryGroups, query, searchMode]);
 
   // Results count for current mode
-  const resultsCount = searchMode === 'projects' ? filteredProjects.length : sessionResults.length;
+  const resultsCount = queryIsUUID
+    ? sessionIdMatch?.found
+      ? 1
+      : 0
+    : queryIsFragment
+      ? partialIdMatches.length
+      : searchMode === 'projects'
+        ? filteredProjects.length
+        : sessionResults.length;
 
   // Fetch repository groups if needed
   useEffect(() => {
@@ -235,11 +327,84 @@ export const CommandPalette = (): React.JSX.Element | null => {
       setTotalMatches(0);
       setSearchIsPartial(false);
       setGlobalSearchEnabled(false);
+      setSessionIdMatch(null);
+      setPartialIdMatches([]);
     }
   }, [commandPaletteOpen]);
 
-  // Search sessions with debounce (only in session mode)
+  // Detect UUID input and look up session by ID (exact match)
   useEffect(() => {
+    if (!commandPaletteOpen || !queryIsUUID) {
+      setSessionIdMatch(null);
+      return;
+    }
+
+    setPartialIdMatches([]);
+    const timeoutId = setTimeout(async () => {
+      const requestId = latestSearchRequestRef.current + 1;
+      latestSearchRequestRef.current = requestId;
+      setLoading(true);
+      try {
+        const result = await api.findSessionById(query.trim());
+        if (latestSearchRequestRef.current !== requestId) return;
+        setSessionIdMatch(result);
+        setSessionResults([]);
+        setTotalMatches(0);
+        setSearchIsPartial(false);
+        setSelectedIndex(0);
+      } catch (error) {
+        if (latestSearchRequestRef.current !== requestId) return;
+        logger.error('Session ID lookup error:', error);
+        setSessionIdMatch(null);
+      } finally {
+        if (latestSearchRequestRef.current === requestId) {
+          setLoading(false);
+        }
+      }
+    }, 50);
+
+    return () => clearTimeout(timeoutId);
+  }, [query, commandPaletteOpen, queryIsUUID]);
+
+  // Detect partial session ID fragment and look up matching sessions
+  useEffect(() => {
+    if (!commandPaletteOpen || !queryIsFragment) {
+      setPartialIdMatches([]);
+      return;
+    }
+
+    setSessionIdMatch(null);
+    setSessionResults([]);
+    const timeoutId = setTimeout(async () => {
+      const requestId = latestSearchRequestRef.current + 1;
+      latestSearchRequestRef.current = requestId;
+      setLoading(true);
+      try {
+        const result = await api.findSessionsByPartialId(query.trim());
+        if (latestSearchRequestRef.current !== requestId) return;
+        setPartialIdMatches(result.results);
+        setSelectedIndex(0);
+      } catch (error) {
+        if (latestSearchRequestRef.current !== requestId) return;
+        logger.error('Partial session ID lookup error:', error);
+        setPartialIdMatches([]);
+      } finally {
+        if (latestSearchRequestRef.current === requestId) {
+          setLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [query, commandPaletteOpen, queryIsFragment]);
+
+  // Search sessions with debounce (only in session mode, skip when session ID detected)
+  useEffect(() => {
+    // Skip text search when query is a UUID or fragment (handled by dedicated lookups above)
+    if (queryIsSessionId) {
+      return;
+    }
+
     // Only clear results when query is too short or palette is closed
     if (!commandPaletteOpen || query.trim().length < 2) {
       setSessionResults([]);
@@ -284,7 +449,14 @@ export const CommandPalette = (): React.JSX.Element | null => {
     }, 400);
 
     return () => clearTimeout(timeoutId);
-  }, [query, selectedProjectId, commandPaletteOpen, searchMode, globalSearchEnabled]);
+  }, [
+    query,
+    selectedProjectId,
+    commandPaletteOpen,
+    searchMode,
+    globalSearchEnabled,
+    queryIsSessionId,
+  ]);
 
   // Reset selected index when results change
   useEffect(() => {
@@ -298,6 +470,23 @@ export const CommandPalette = (): React.JSX.Element | null => {
       selectRepository(repo.id);
     },
     [closeCommandPalette, selectRepository]
+  );
+
+  // Handle session ID match click (direct navigation)
+  const handleSessionIdMatchClick = useCallback(() => {
+    if (sessionIdMatch?.found && sessionIdMatch.projectId && sessionIdMatch.session) {
+      closeCommandPalette();
+      navigateToSession(sessionIdMatch.projectId, sessionIdMatch.session.id, false);
+    }
+  }, [closeCommandPalette, navigateToSession, sessionIdMatch]);
+
+  // Handle partial ID match click
+  const handlePartialMatchClick = useCallback(
+    (projectId: string, sessionId: string) => {
+      closeCommandPalette();
+      navigateToSession(projectId, sessionId, false);
+    },
+    [closeCommandPalette, navigateToSession]
   );
 
   // Handle session result click
@@ -354,17 +543,32 @@ export const CommandPalette = (): React.JSX.Element | null => {
         return;
       }
 
-      if (e.key === 'Enter' && resultsCount > 0) {
+      if (e.key === 'Enter') {
         e.preventDefault();
-        if (searchMode === 'projects') {
-          const selected = filteredProjects[selectedIndex];
+        // Handle UUID session ID match
+        if (queryIsUUID && sessionIdMatch?.found) {
+          handleSessionIdMatchClick();
+          return;
+        }
+        // Handle partial ID match selection
+        if (queryIsFragment && partialIdMatches.length > 0) {
+          const selected = partialIdMatches[selectedIndex];
           if (selected) {
-            handleProjectClick(selected);
+            handlePartialMatchClick(selected.projectId, selected.session.id);
           }
-        } else {
-          const selected = sessionResults[selectedIndex];
-          if (selected) {
-            handleSessionResultClick(selected);
+          return;
+        }
+        if (resultsCount > 0) {
+          if (searchMode === 'projects') {
+            const selected = filteredProjects[selectedIndex];
+            if (selected) {
+              handleProjectClick(selected);
+            }
+          } else {
+            const selected = sessionResults[selectedIndex];
+            if (selected) {
+              handleSessionResultClick(selected);
+            }
           }
         }
       }
@@ -376,8 +580,14 @@ export const CommandPalette = (): React.JSX.Element | null => {
       searchMode,
       filteredProjects,
       sessionResults,
+      sessionIdMatch,
+      partialIdMatches,
+      queryIsUUID,
+      queryIsFragment,
       handleProjectClick,
       handleSessionResultClick,
+      handleSessionIdMatchClick,
+      handlePartialMatchClick,
     ]
   );
 
@@ -427,7 +637,12 @@ export const CommandPalette = (): React.JSX.Element | null => {
         <div className="bg-surface-raised/50 border-b border-border px-4 py-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              {searchMode === 'projects' ? (
+              {queryIsSessionId ? (
+                <>
+                  <Search className="size-3.5 text-green-400" />
+                  <span className="text-xs text-green-400">Session ID search</span>
+                </>
+              ) : searchMode === 'projects' ? (
                 <>
                   <FolderGit2 className="size-3.5 text-text-muted" />
                   <span className="text-xs text-text-muted">Search projects</span>
@@ -440,11 +655,9 @@ export const CommandPalette = (): React.JSX.Element | null => {
                   </span>
                   {!globalSearchEnabled && (
                     <>
-                      <span className="text-text-muted/50 mx-1 text-xs">·</span>
+                      <span className="text-text-muted/50 mx-1 text-xs">&middot;</span>
                       <span className="truncate text-xs text-text-secondary">
-                        {repositoryGroups.find((r) =>
-                          r.worktrees.some((w) => w.id === selectedProjectId)
-                        )?.name ?? 'Current project'}
+                        {selectedProjectName}
                       </span>
                     </>
                   )}
@@ -480,7 +693,9 @@ export const CommandPalette = (): React.JSX.Element | null => {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              searchMode === 'projects' ? 'Search projects...' : 'Search conversations...'
+              searchMode === 'projects'
+                ? 'Search projects or paste session ID...'
+                : 'Search conversations or paste session ID...'
             }
             className="placeholder:text-text-muted/50 flex-1 bg-transparent text-base text-text focus:outline-none"
           />
@@ -495,7 +710,54 @@ export const CommandPalette = (): React.JSX.Element | null => {
 
         {/* Results */}
         <div className="max-h-[50vh] overflow-y-auto">
-          {searchMode === 'projects' ? (
+          {queryIsUUID ? (
+            // Exact UUID lookup result
+            loading ? null : sessionIdMatch?.found && sessionIdMatch.session ? (
+              <div className="py-2">
+                <SessionIdMatchItem
+                  projectName={
+                    (sessionIdMatch.projectId
+                      ? projectNameByWorktreeId.get(sessionIdMatch.projectId)
+                      : undefined) ??
+                    sessionIdMatch.projectId ??
+                    'Unknown'
+                  }
+                  sessionTitle={sessionIdMatch.session.firstMessage ?? ''}
+                  messageCount={sessionIdMatch.session.messageCount}
+                  createdAt={sessionIdMatch.session.createdAt}
+                  sessionId={query.trim()}
+                  isSelected
+                  onClick={handleSessionIdMatchClick}
+                />
+              </div>
+            ) : (
+              <div className="px-4 py-8 text-center text-sm text-text-muted">
+                No session found with ID &ldquo;{query.trim().slice(0, 8)}...&rdquo;
+              </div>
+            )
+          ) : queryIsFragment ? (
+            // Partial session ID fragment results
+            loading ? null : partialIdMatches.length > 0 ? (
+              <div className="py-2">
+                {partialIdMatches.map((match, index) => (
+                  <SessionIdMatchItem
+                    key={match.session.id}
+                    projectName={projectNameByWorktreeId.get(match.projectId) ?? match.projectId}
+                    sessionTitle={match.session.firstMessage ?? ''}
+                    messageCount={match.session.messageCount}
+                    createdAt={match.session.createdAt}
+                    sessionId={match.session.id}
+                    isSelected={index === selectedIndex}
+                    onClick={() => handlePartialMatchClick(match.projectId, match.session.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="px-4 py-8 text-center text-sm text-text-muted">
+                No sessions found matching &ldquo;{query.trim()}&rdquo;
+              </div>
+            )
+          ) : searchMode === 'projects' ? (
             // Project search results
             filteredProjects.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-text-muted">
@@ -527,10 +789,8 @@ export const CommandPalette = (): React.JSX.Element | null => {
           ) : (
             <div className="py-2">
               {sessionResults.map((result, index) => {
-                // Find project name for this result when in global search mode
                 const projectName = globalSearchEnabled
-                  ? repositoryGroups.find((r) => r.worktrees.some((w) => w.id === result.projectId))
-                      ?.name
+                  ? projectNameByWorktreeId.get(result.projectId)
                   : undefined;
 
                 return (

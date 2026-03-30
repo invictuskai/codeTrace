@@ -16,6 +16,8 @@ import type {
   ConversationGroup,
   ElectronAPI,
   FileChangeEvent,
+  FindSessionByIdResult,
+  FindSessionsByPartialIdResult,
   HttpServerAPI,
   HttpServerStatus,
   NotificationsAPI,
@@ -220,6 +222,14 @@ export class HttpAPIClient implements ElectronAPI {
     if (maxResults) params.set('maxResults', String(maxResults));
     return this.get<SearchSessionsResult>(`/api/search?${params}`);
   };
+
+  findSessionById = (sessionId: string): Promise<FindSessionByIdResult> =>
+    this.get<FindSessionByIdResult>(`/api/sessions/${encodeURIComponent(sessionId)}/locate`);
+
+  findSessionsByPartialId = (fragment: string): Promise<FindSessionsByPartialIdResult> =>
+    this.get<FindSessionsByPartialIdResult>(
+      `/api/sessions/search-by-id/${encodeURIComponent(fragment)}`
+    );
 
   getSessionDetail = (projectId: string, sessionId: string): Promise<SessionDetail | null> =>
     this.get<SessionDetail | null>(
