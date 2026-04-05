@@ -11,26 +11,37 @@ import {
 } from '@renderer/constants/cssVariables';
 import { useTheme } from '@renderer/hooks/useTheme';
 import { Code, GitBranch } from 'lucide-react';
-import mermaid from 'mermaid';
+
+import type mermaidApi from 'mermaid';
 
 // =============================================================================
-// Mermaid initialization
+// Mermaid initialization (lazy-loaded to keep it out of the main bundle)
 // =============================================================================
 
+let mermaidInstance: typeof mermaidApi | null = null;
 let lastMermaidTheme: 'dark' | 'default' | null = null;
 
-function ensureMermaidInit(isDark: boolean): void {
-  const theme: 'dark' | 'default' = isDark ? 'dark' : 'default';
-  if (lastMermaidTheme === theme) {
-    return;
+async function getMermaid(): Promise<typeof mermaidApi> {
+  if (!mermaidInstance) {
+    const mod = await import('mermaid');
+    mermaidInstance = mod.default;
   }
-  mermaid.initialize({
-    startOnLoad: false,
-    theme,
-    securityLevel: 'strict',
-    fontFamily: 'ui-sans-serif, system-ui, sans-serif',
-  });
-  lastMermaidTheme = theme;
+  return mermaidInstance;
+}
+
+async function ensureMermaidInit(isDark: boolean): Promise<typeof mermaidApi> {
+  const m = await getMermaid();
+  const theme: 'dark' | 'default' = isDark ? 'dark' : 'default';
+  if (lastMermaidTheme !== theme) {
+    m.initialize({
+      startOnLoad: false,
+      theme,
+      securityLevel: 'strict',
+      fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+    });
+    lastMermaidTheme = theme;
+  }
+  return m;
 }
 
 // =============================================================================
@@ -53,9 +64,9 @@ export const MermaidViewer: React.FC<MermaidViewerProps> = ({ code }) => {
     let cancelled = false;
     const render = async (): Promise<void> => {
       try {
-        ensureMermaidInit(isDark);
+        const m = await ensureMermaidInit(isDark);
         const id = `mermaid-${uniqueId}`;
-        const { svg: rendered } = await mermaid.render(id, code);
+        const { svg: rendered } = await m.render(id, code);
         if (!cancelled) {
           setSvg(rendered);
           setError(null);

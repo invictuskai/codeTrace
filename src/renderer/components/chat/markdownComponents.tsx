@@ -4,7 +4,9 @@ import { api } from '@renderer/api';
 import { CopyButton } from '@renderer/components/common/CopyButton';
 import { PROSE_BODY } from '@renderer/constants/cssVariables';
 
-import { MermaidViewer } from './viewers/MermaidViewer';
+const MermaidViewer = React.lazy(() =>
+  import('./viewers/MermaidViewer').then((m) => ({ default: m.MermaidViewer }))
+);
 import { highlightSearchInChildren, type SearchContext } from './searchHighlightUtils';
 
 import type { Components } from 'react-markdown';
@@ -129,7 +131,11 @@ export function createMarkdownComponents(searchCtx: SearchContext | null): Compo
         const text = content.replace(/\n$/, '');
 
         if (lang === 'mermaid') {
-          return <MermaidViewer code={text} />;
+          return (
+            <React.Suspense fallback={<code className="block font-mono text-xs">{text}</code>}>
+              <MermaidViewer code={text} />
+            </React.Suspense>
+          );
         }
 
         return (
@@ -153,18 +159,22 @@ export function createMarkdownComponents(searchCtx: SearchContext | null): Compo
     },
 
     // Code blocks — skip <pre> wrapper for mermaid diagrams, with copy button
-    pre: ({ children }) => {
-      const child = React.Children.only(children) as React.ReactElement;
-      if (child?.type === MermaidViewer) {
+    pre: ({ children, node }) => {
+      // Detect mermaid: check if the <code> child has class "language-mermaid"
+      const codeEl = node?.children?.find((c) => 'tagName' in c && c.tagName === 'code') as
+        | { properties?: { className?: string[] } }
+        | undefined;
+      const isMermaid = codeEl?.properties?.className?.includes('language-mermaid');
+      if (isMermaid) {
         return children as React.ReactElement;
       }
 
       // Extract text from nested <code> children for the copy button
-      const extractText = (node: React.ReactNode): string => {
-        if (typeof node === 'string') return node;
-        if (Array.isArray(node)) return node.map(extractText).join('');
-        if (React.isValidElement(node) && node.props) {
-          const props = node.props as { children?: React.ReactNode };
+      const extractText = (child: React.ReactNode): string => {
+        if (typeof child === 'string') return child;
+        if (Array.isArray(child)) return child.map(extractText).join('');
+        if (React.isValidElement(child) && child.props) {
+          const props = child.props as { children?: React.ReactNode };
           return extractText(props.children);
         }
         return '';
