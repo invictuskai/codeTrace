@@ -33,7 +33,9 @@ import {
   highlightSearchInChildren,
   type SearchContext,
 } from '../searchHighlightUtils';
-import { MermaidViewer } from '../viewers/MermaidViewer';
+const MermaidViewer = React.lazy(() =>
+  import('../viewers/MermaidViewer').then((m) => ({ default: m.MermaidViewer }))
+);
 import { highlightLine } from '../viewers/syntaxHighlighter';
 
 // =============================================================================
@@ -162,7 +164,11 @@ function createViewerMarkdownComponents(searchCtx: SearchContext | null): Compon
         const text = raw.replace(/\n$/, '');
 
         if (lang === 'mermaid') {
-          return <MermaidViewer code={text} />;
+          return (
+            <React.Suspense fallback={<code className="font-mono text-xs">{text}</code>}>
+              <MermaidViewer code={text} />
+            </React.Suspense>
+          );
         }
 
         const lines = text.split('\n');
@@ -192,9 +198,12 @@ function createViewerMarkdownComponents(searchCtx: SearchContext | null): Compon
     },
 
     // Code blocks — skip <pre> wrapper for mermaid diagrams
-    pre: ({ children }) => {
-      const child = React.Children.only(children) as React.ReactElement;
-      if (child?.type === MermaidViewer) {
+    pre: ({ children, node }) => {
+      const codeEl = node?.children?.find((c) => 'tagName' in c && c.tagName === 'code') as
+        | { properties?: { className?: string[] } }
+        | undefined;
+      const isMermaid = codeEl?.properties?.className?.includes('language-mermaid');
+      if (isMermaid) {
         return children as React.ReactElement;
       }
       return (
