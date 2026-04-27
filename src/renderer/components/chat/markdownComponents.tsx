@@ -1,0 +1,272 @@
+import React from 'react';
+
+import { api } from '@renderer/api';
+import { CopyButton } from '@renderer/components/common/CopyButton';
+import { PROSE_BODY } from '@renderer/constants/cssVariables';
+
+const MermaidViewer = React.lazy(() =>
+  import('./viewers/MermaidViewer').then((m) => ({ default: m.MermaidViewer }))
+);
+import { highlightSearchInChildren, type SearchContext } from './searchHighlightUtils';
+
+import type { Components } from 'react-markdown';
+
+/**
+ * Create inline markdown components for rendering prose content.
+ * When searchCtx is provided, search term highlighting is applied
+ * to text nodes while preserving full markdown rendering.
+ */
+export function createMarkdownComponents(searchCtx: SearchContext | null): Components {
+  const hl = (children: React.ReactNode): React.ReactNode =>
+    searchCtx ? highlightSearchInChildren(children, searchCtx) : children;
+
+  return {
+    // Headings - Bold text with generous spacing to break up content
+    h1: ({ children }) => (
+      <h1
+        className="mb-3 mt-6 text-lg font-semibold first:mt-0"
+        style={{ color: 'var(--prose-heading)' }}
+      >
+        {hl(children)}
+      </h1>
+    ),
+    h2: ({ children }) => (
+      <h2
+        className="mb-2 mt-5 text-base font-semibold first:mt-0"
+        style={{ color: 'var(--prose-heading)' }}
+      >
+        {hl(children)}
+      </h2>
+    ),
+    h3: ({ children }) => (
+      <h3
+        className="mb-2 mt-4 text-sm font-semibold first:mt-0"
+        style={{ color: 'var(--prose-heading)' }}
+      >
+        {hl(children)}
+      </h3>
+    ),
+    h4: ({ children }) => (
+      <h4
+        className="mb-1.5 mt-3 text-sm font-semibold first:mt-0"
+        style={{ color: 'var(--prose-heading)' }}
+      >
+        {hl(children)}
+      </h4>
+    ),
+    h5: ({ children }) => (
+      <h5
+        className="mb-1 mt-2 text-sm font-medium first:mt-0"
+        style={{ color: 'var(--prose-heading)' }}
+      >
+        {hl(children)}
+      </h5>
+    ),
+    h6: ({ children }) => (
+      <h6
+        className="mb-1 mt-2 text-xs font-medium first:mt-0"
+        style={{ color: 'var(--prose-heading)' }}
+      >
+        {hl(children)}
+      </h6>
+    ),
+
+    // Paragraphs
+    p: ({ children }) => (
+      <p
+        className="my-2 text-sm leading-relaxed first:mt-0 last:mb-0"
+        style={{ color: PROSE_BODY }}
+      >
+        {hl(children)}
+      </p>
+    ),
+
+    // Links — open in system browser via IPC, not in Electron window
+    a: ({ href, children }) => (
+      <a
+        href={href}
+        className="cursor-pointer no-underline hover:underline"
+        style={{ color: 'var(--prose-link)' }}
+        onClick={(e) => {
+          e.preventDefault();
+          if (href) {
+            void api.openExternal(href);
+          }
+        }}
+      >
+        {children}
+      </a>
+    ),
+
+    // Strong/Bold — inline element, no hl()
+    strong: ({ children }) => (
+      <strong className="font-semibold" style={{ color: 'var(--prose-heading)' }}>
+        {children}
+      </strong>
+    ),
+
+    // Emphasis/Italic — inline element, no hl()
+    em: ({ children }) => (
+      <em className="italic" style={{ color: PROSE_BODY }}>
+        {children}
+      </em>
+    ),
+
+    // Strikethrough — inline element, no hl()
+    del: ({ children }) => (
+      <del className="line-through" style={{ color: PROSE_BODY }}>
+        {children}
+      </del>
+    ),
+
+    // Inline code vs block code
+    code: ({ className, children }) => {
+      const hasLanguageClass = className?.includes('language-');
+      const content = typeof children === 'string' ? children : '';
+      const isMultiLine = content.includes('\n');
+      const isBlock = (hasLanguageClass ?? false) || isMultiLine;
+
+      if (isBlock) {
+        const lang = className?.replace('language-', '') ?? '';
+        const text = content.replace(/\n$/, '');
+
+        if (lang === 'mermaid') {
+          return (
+            <React.Suspense fallback={<code className="block font-mono text-xs">{text}</code>}>
+              <MermaidViewer code={text} />
+            </React.Suspense>
+          );
+        }
+
+        return (
+          <code className="block font-mono text-xs" style={{ color: 'var(--color-text)' }}>
+            {hl(children)}
+          </code>
+        );
+      }
+      // Inline code — no hl(); parent block element's hl() descends here
+      return (
+        <code
+          className="rounded px-1.5 py-0.5 font-mono text-xs"
+          style={{
+            backgroundColor: 'var(--prose-code-bg)',
+            color: 'var(--prose-code-text)',
+          }}
+        >
+          {children}
+        </code>
+      );
+    },
+
+    // Code blocks — skip <pre> wrapper for mermaid diagrams, with copy button
+    pre: ({ children, node }) => {
+      // Detect mermaid: check if the <code> child has class "language-mermaid"
+      const codeEl = node?.children?.find((c) => 'tagName' in c && c.tagName === 'code') as
+        | { properties?: { className?: string[] } }
+        | undefined;
+      const isMermaid = codeEl?.properties?.className?.includes('language-mermaid');
+      if (isMermaid) {
+        return children as React.ReactElement;
+      }
+
+      // Extract text from nested <code> children for the copy button
+      const extractText = (child: React.ReactNode): string => {
+        if (typeof child === 'string') return child;
+        if (Array.isArray(child)) return child.map(extractText).join('');
+        if (React.isValidElement(child) && child.props) {
+          const props = child.props as { children?: React.ReactNode };
+          return extractText(props.children);
+        }
+        return '';
+      };
+      const codeText = extractText(children).trim();
+
+      return (
+        <pre
+          className="group relative my-3 overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed"
+          style={{
+            backgroundColor: 'var(--prose-pre-bg)',
+            border: '1px solid var(--prose-pre-border)',
+            color: 'var(--color-text)',
+          }}
+        >
+          {codeText && <CopyButton text={codeText} />}
+          {children}
+        </pre>
+      );
+    },
+
+    // Blockquotes
+    blockquote: ({ children }) => (
+      <blockquote
+        className="my-3 border-l-4 pl-4 italic"
+        style={{
+          borderColor: 'var(--prose-blockquote-border)',
+          color: 'var(--prose-muted)',
+        }}
+      >
+        {hl(children)}
+      </blockquote>
+    ),
+
+    // Lists
+    ul: ({ children }) => (
+      <ul className="my-2 list-disc space-y-1 pl-5" style={{ color: PROSE_BODY }}>
+        {children}
+      </ul>
+    ),
+    ol: ({ children }) => (
+      <ol className="my-2 list-decimal space-y-1 pl-5" style={{ color: PROSE_BODY }}>
+        {children}
+      </ol>
+    ),
+    li: ({ children }) => (
+      <li className="text-sm" style={{ color: PROSE_BODY }}>
+        {hl(children)}
+      </li>
+    ),
+
+    // Tables
+    table: ({ children }) => (
+      <div className="my-3 overflow-x-auto">
+        <table
+          className="min-w-full border-collapse text-sm"
+          style={{ borderColor: 'var(--prose-table-border)' }}
+        >
+          {children}
+        </table>
+      </div>
+    ),
+    thead: ({ children }) => (
+      <thead style={{ backgroundColor: 'var(--prose-table-header-bg)' }}>{children}</thead>
+    ),
+    th: ({ children }) => (
+      <th
+        className="px-3 py-2 text-left font-semibold"
+        style={{
+          border: '1px solid var(--prose-table-border)',
+          color: 'var(--prose-heading)',
+        }}
+      >
+        {hl(children)}
+      </th>
+    ),
+    td: ({ children }) => (
+      <td
+        className="px-3 py-2"
+        style={{
+          border: '1px solid var(--prose-table-border)',
+          color: PROSE_BODY,
+        }}
+      >
+        {hl(children)}
+      </td>
+    ),
+
+    // Horizontal rule
+    hr: () => <hr className="my-4" style={{ borderColor: 'var(--prose-table-border)' }} />,
+  };
+}
+
+/** Default markdown components without search highlighting (used by CompactBoundary) */
+export const markdownComponents: Components = createMarkdownComponents(null);

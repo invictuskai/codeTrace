@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | { read f; for p in pnpm-lock.yaml .env dist/ dist-electron/ node_modules/; do if [ -n \"$f\" ] && echo \"$f\" | grep -q \"$p\"; then echo \"Blocked: $f matches protected pattern '$p'\" >&2; exit 2; fi; done; exit 0; }"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' | { read file_path; if [ -n \"$file_path\" ] && echo \"$file_path\" | grep -qE '\\.(ts|tsx|js|jsx)$'; then pnpm eslint --fix \"$file_path\" 2>/dev/null || true; fi; if [ -n \"$file_path\" ] && echo \"$file_path\" | grep -qE '\\.(ts|tsx|js|jsx|json|css)$'; then pnpm prettier --write \"$file_path\" 2>/dev/null || true; fi; }",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[Post-compaction context reminder]\n- Package manager: pnpm only (not npm/yarn)\n- Path aliases: @main/*, @renderer/*, @shared/*, @preload/*\n- Electron 3-process: main/ (Node), preload/ (bridge), renderer/ (React), shared/ (cross-process)\n- isMeta: false = real user message, true = internal/system message\n- Chunk types: UserChunk, AIChunk, SystemChunk, CompactChunk\n- State: Zustand slices pattern (data, selectedId, loading, error)\n- Styling: Tailwind with CSS variables (bg-surface, text-text, border-border)\n- Naming: PascalCase services/components, camelCase utils, UPPER_SNAKE constants\n- Barrel exports: import from domain index.ts\n- New IPC: channel in preload/constants → handler in main/ipc → method in preload/index.ts\n- PostToolUse hook auto-runs eslint+prettier on edited files\n- PreToolUse hook blocks edits to pnpm-lock.yaml, .env, dist/, node_modules/'"
+          }
+        ]
+      }
+    ]
+  }
+}

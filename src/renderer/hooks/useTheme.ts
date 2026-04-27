@@ -1,0 +1,112 @@
+import { useCallback, useEffect, useState } from 'react';
+
+import { useShallow } from 'zustand/react/shallow';
+
+import { useStore } from '../store';
+
+type Theme = 'dark' | 'light' | 'system';
+type ResolvedTheme = 'dark' | 'light';
+
+const THEME_CACHE_KEY = 'codetrace-theme-cache';
+
+/**
+ * Hook to manage theme state and application.
+ * - Fetches theme preference from config on mount
+ * - Listens to system theme changes when set to 'system'
+ * - Applies theme class to document root
+ * - Caches theme in localStorage for flash prevention
+ */
+export function useTheme(): {
+  theme: Theme;
+  resolvedTheme: ResolvedTheme;
+  isDark: boolean;
+  isLight: boolean;
+} {
+  const { appConfig, fetchConfig } = useStore(
+    useShallow((s) => ({
+      appConfig: s.appConfig,
+      fetchConfig: s.fetchConfig,
+    }))
+  );
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => {
+    // Initialize from cache to prevent flash
+    try {
+      const cached = localStorage.getItem(THEME_CACHE_KEY);
+      if (cached === 'light') return 'light';
+    } catch {
+      // localStorage may not be available
+    }
+    return 'dark';
+  });
+
+  // Fetch config on mount if not loaded
+  useEffect(() => {
+    if (!appConfig) {
+      void fetchConfig();
+    }
+  }, [appConfig, fetchConfig]);
+
+  // Get configured theme
+  const configuredTheme: Theme = appConfig?.general?.theme ?? 'dark';
+
+  // Get system theme preference
+  const getSystemTheme = useCallback((): ResolvedTheme => {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }, []);
+
+  // Resolve 'system' theme and listen for changes
+  useEffect(() => {
+    const updateTheme = (): void => {
+      const resolved = configuredTheme === 'system' ? getSystemTheme() : configuredTheme;
+      setResolvedTheme(resolved);
+
+      // Cache for flash prevention
+      try {
+        localStorage.setItem(THEME_CACHE_KEY, resolved);
+      } catch {
+        // localStorage may not be available
+      }
+    };
+
+    updateTheme();
+
+    // Listen to system theme changes when in 'system' mode
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (): void => {
+      if (configuredTheme === 'system') {
+        updateTheme();
+      }
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [configuredTheme, getSystemTheme]);
+
+  // Apply theme class to document root with scoped transition
+  useEffect(() => {
+    const root = document.documentElement;
+
+    // Enable transition only during explicit theme toggle
+    document.body.classList.add('theme-transitioning');
+
+    // Remove existing theme classes
+    root.classList.remove('dark', 'light');
+
+    // Add new theme class
+    root.classList.add(resolvedTheme);
+
+    // Remove transition class after animation completes to avoid tracking
+    // transition state on every repaint (perf: macOS Chromium compositor)
+    const timer = setTimeout(() => {
+      document.body.classList.remove('theme-transitioning');
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [resolvedTheme]);
+
+  return {
+    theme: configuredTheme,
+    resolvedTheme,
+    isDark: resolvedTheme === 'dark',
+    isLight: resolvedTheme === 'light',
+  };
+}
