@@ -50,6 +50,16 @@
 
 ---
 
+## Origin and Acknowledgements
+
+codeTrace is based on the open source project [matt1398/claude-devtools](https://github.com/matt1398/claude-devtools).
+
+Thanks to Matthew and the claude-devtools contributors for building the original Claude Code session inspector. This fork keeps the same debugging-oriented foundation and adds adaptation work for Codex session discovery, parsing, and rendering.
+
+The upstream project is distributed under the [MIT License](https://github.com/matt1398/claude-devtools/blob/main/LICENSE). This project remains MIT-licensed and preserves the original copyright notice in [LICENSE](LICENSE).
+
+---
+
 ## The Problem
 
 **Claude Code started hiding what it does.**
@@ -222,4 +232,4 @@ IPC handlers validate all inputs with strict path containment checks. File reads
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). This project is derived from [matt1398/claude-devtools](https://github.com/matt1398/claude-devtools), which is also MIT-licensed.
