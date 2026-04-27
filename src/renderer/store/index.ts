@@ -19,11 +19,9 @@ import { createSubagentSlice } from './slices/subagentSlice';
 import { createTabSlice } from './slices/tabSlice';
 import { createTabUISlice } from './slices/tabUISlice';
 import { createUISlice } from './slices/uiSlice';
-import { createUpdateSlice } from './slices/updateSlice';
 
 import type { DetectedError } from '../types/data';
 import type { AppState } from './types';
-import type { UpdaterStatus } from '@shared/types';
 
 // =============================================================================
 // Store Creation
@@ -44,7 +42,6 @@ export const useStore = create<AppState>()((...args) => ({
   ...createConfigSlice(...args),
   ...createConnectionSlice(...args),
   ...createContextSlice(...args),
-  ...createUpdateSlice(...args),
 }));
 
 // =============================================================================
@@ -65,8 +62,10 @@ export function initializeNotificationListeners(): () => void {
   const pendingProjectRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const SESSION_REFRESH_DEBOUNCE_MS = 150;
   const PROJECT_REFRESH_DEBOUNCE_MS = 300;
+  const CODEX_PROJECT_ID_PATTERN = /^codex::[a-f0-9]{12}$/;
   const getBaseProjectId = (projectId: string | null | undefined): string | null => {
     if (!projectId) return null;
+    if (CODEX_PROJECT_ID_PATTERN.test(projectId)) return projectId;
     const separatorIndex = projectId.indexOf('::');
     return separatorIndex >= 0 ? projectId.slice(0, separatorIndex) : projectId;
   };
@@ -302,51 +301,6 @@ export function initializeNotificationListeners(): () => void {
         ]).then(() => {
           window.dispatchEvent(new CustomEvent('session-refresh-scroll-bottom'));
         });
-      }
-    });
-    if (typeof cleanup === 'function') {
-      cleanupFns.push(cleanup);
-    }
-  }
-
-  // Listen for updater status events from main process
-  if (api.updater?.onStatus) {
-    const cleanup = api.updater.onStatus((_event: unknown, status: unknown) => {
-      const s = status as UpdaterStatus;
-      switch (s.type) {
-        case 'checking':
-          useStore.setState({ updateStatus: 'checking' });
-          break;
-        case 'available':
-          useStore.setState({
-            updateStatus: 'available',
-            availableVersion: s.version ?? null,
-            releaseNotes: s.releaseNotes ?? null,
-            showUpdateDialog: true,
-          });
-          break;
-        case 'not-available':
-          useStore.setState({ updateStatus: 'not-available' });
-          break;
-        case 'downloading':
-          useStore.setState({
-            updateStatus: 'downloading',
-            downloadProgress: s.progress?.percent ?? 0,
-          });
-          break;
-        case 'downloaded':
-          useStore.setState({
-            updateStatus: 'downloaded',
-            downloadProgress: 100,
-            availableVersion: s.version ?? useStore.getState().availableVersion,
-          });
-          break;
-        case 'error':
-          useStore.setState({
-            updateStatus: 'error',
-            updateError: s.error ?? 'Unknown error',
-          });
-          break;
       }
     });
     if (typeof cleanup === 'function') {

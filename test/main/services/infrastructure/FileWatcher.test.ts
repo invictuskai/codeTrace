@@ -1,3 +1,5 @@
+/* eslint-disable security/detect-non-literal-fs-filename, sonarjs/publicly-writable-directories -- Tests use temporary fixture directories and mocked /tmp paths. */
+
 import { EventEmitter } from 'events';
 import type * as FsType from 'fs';
 import * as os from 'os';
@@ -48,6 +50,7 @@ vi.mock('../../../../src/main/services/discovery/ProjectPathResolver', () => ({
 
 import * as fs from 'fs';
 
+import { buildCodexProjectId } from '../../../../src/main/utils/codexPaths';
 import { errorDetector } from '../../../../src/main/services/error/ErrorDetector';
 import { DataCache } from '../../../../src/main/services/infrastructure/DataCache';
 import { FileWatcher } from '../../../../src/main/services/infrastructure/FileWatcher';
@@ -201,6 +204,56 @@ describe('FileWatcher', () => {
     ).parseAppendedMessages(filePath, firstPass.consumedBytes);
     expect(completedPass.parsedLineCount).toBe(1);
     expect(completedPass.consumedBytes).toBeGreaterThan(0);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('emits file-change events for Codex rollout files with synthetic project IDs', async () => {
+    vi.useRealTimers();
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'filewatcher-codex-'));
+    const codexSessionsDir = path.join(tempDir, 'sessions');
+    const nestedDir = path.join(codexSessionsDir, '2026', '04', '26');
+    fs.mkdirSync(nestedDir, { recursive: true });
+
+    const sessionId = '019dc922-1da9-7b40-84cd-9472ae446a60';
+    const cwd = 'D:\\llm\\claude-devtools';
+    const filePath = path.join(nestedDir, `rollout-2026-04-26T17-32-29-${sessionId}.jsonl`);
+    fs.writeFileSync(
+      filePath,
+      `${JSON.stringify({
+        timestamp: '2026-04-26T09:32:30.459Z',
+        type: 'session_meta',
+        payload: { id: sessionId, cwd },
+      })}\n`,
+      'utf8'
+    );
+
+    const dataCache = new DataCache(50, 10, false);
+    const watcher = new FileWatcher(
+      dataCache,
+      path.join(tempDir, 'projects'),
+      path.join(tempDir, 'todos'),
+      undefined,
+      codexSessionsDir
+    );
+    const events: unknown[] = [];
+    watcher.on('file-change', (event) => events.push(event));
+
+    await (
+      watcher as unknown as {
+        processCodexSessionsChange: (eventType: string, filename: string) => Promise<void>;
+      }
+    ).processCodexSessionsChange('change', path.relative(codexSessionsDir, filePath));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'change',
+      path: filePath,
+      projectId: buildCodexProjectId(cwd),
+      sessionId,
+      isSubagent: false,
+    });
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });

@@ -10,6 +10,7 @@
  * - WorktreeGrouper: Groups projects by git worktree
  */
 
+export * from './CodexProjectScanner';
 export * from './ProjectPathResolver';
 export * from './ProjectScanner';
 export * from './SearchTextCache';

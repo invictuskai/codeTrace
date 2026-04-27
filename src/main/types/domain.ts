@@ -1,5 +1,5 @@
 /**
- * Domain/business entity types for claude-devtools.
+ * Domain/business entity types for codeTrace.
  *
  * These types represent the application's domain model:
  * - Projects and sessions
@@ -42,9 +42,16 @@ export type MessageCategory = 'user' | 'system' | 'hardNoise' | 'ai' | 'compact'
 // =============================================================================
 
 /**
+ * Session log provider.
+ */
+export type ProjectProvider = 'claude' | 'codex';
+
+/**
  * Project information derived from ~/.claude/projects/ directory.
  */
 export interface Project {
+  /** Source provider for this project/session directory */
+  provider?: ProjectProvider;
   /** Encoded directory name (e.g., "-Users-username-projectname") */
   id: string;
   /** Decoded actual filesystem path */
@@ -79,6 +86,8 @@ export interface PhaseTokenBreakdown {
 }
 
 export interface Session {
+  /** Source provider for this session */
+  provider?: ProjectProvider;
   /** Session UUID (JSONL filename without extension) */
   id: string;
   /** Parent project ID */
@@ -171,6 +180,8 @@ export interface RepositoryIdentity {
  * In the grouped view, projects become worktrees under a RepositoryGroup.
  */
 export interface Worktree {
+  /** Source provider for this worktree */
+  provider?: ProjectProvider;
   /** Encoded directory name (same as Project.id) */
   id: string;
   /** Decoded actual filesystem path */
@@ -197,6 +208,8 @@ export interface Worktree {
  * Non-git projects are represented as single-worktree RepositoryGroups.
  */
 export interface RepositoryGroup {
+  /** Source provider for this repository group */
+  provider?: ProjectProvider;
   /** Unique identifier from RepositoryIdentity.id (or project.id for non-git) */
   id: string;
   /** Repository identity information (null for non-git projects) */

@@ -15,8 +15,13 @@ import {
   getToolStatus,
   getToolSummary,
   hasEditContent,
+  hasPatchContent,
   hasReadContent,
+  hasShellCommandContent,
   hasSkillInstructions,
+  hasUpdatePlanContent,
+  hasViewImageContent,
+  hasWebSearchContent,
   hasWriteContent,
 } from '@renderer/utils/toolRendering';
 import {
@@ -31,11 +36,16 @@ import { Wrench } from 'lucide-react';
 import { BaseItem, StatusDot } from './BaseItem';
 import { formatDuration } from './baseItemHelpers';
 import {
+  CodexShellViewer,
   DefaultToolViewer,
   EditToolViewer,
+  PatchToolViewer,
   ReadToolViewer,
   SkillToolViewer,
   ToolErrorDisplay,
+  UpdatePlanViewer,
+  ViewImageViewer,
+  WebSearchViewer,
   WriteToolViewer,
 } from './linkedTool';
 
@@ -136,10 +146,24 @@ export const LinkedToolItem: React.FC<LinkedToolItemProps> = React.memo(function
   const useReadViewer =
     linkedTool.name === 'Read' && hasReadContent(linkedTool) && !linkedTool.result?.isError;
   const useEditViewer = linkedTool.name === 'Edit' && hasEditContent(linkedTool);
+  const usePatchViewer = linkedTool.name === 'apply_patch' && hasPatchContent(linkedTool);
   const useWriteViewer =
     linkedTool.name === 'Write' && hasWriteContent(linkedTool) && !linkedTool.result?.isError;
   const useSkillViewer = linkedTool.name === 'Skill' && hasSkillInstructions(linkedTool);
-  const useDefaultViewer = !useReadViewer && !useEditViewer && !useWriteViewer && !useSkillViewer;
+  const useShellViewer = linkedTool.name === 'shell_command' && hasShellCommandContent(linkedTool);
+  const useUpdatePlanViewer = linkedTool.name === 'update_plan' && hasUpdatePlanContent(linkedTool);
+  const useWebSearchViewer = linkedTool.name === 'web_search' && hasWebSearchContent(linkedTool);
+  const useViewImageViewer = linkedTool.name === 'view_image' && hasViewImageContent(linkedTool);
+  const useDefaultViewer =
+    !useReadViewer &&
+    !useEditViewer &&
+    !usePatchViewer &&
+    !useWriteViewer &&
+    !useSkillViewer &&
+    !useShellViewer &&
+    !useUpdatePlanViewer &&
+    !useWebSearchViewer &&
+    !useViewImageViewer;
 
   // Check if we should show error display for Read/Write tools
   const showReadError = linkedTool.name === 'Read' && linkedTool.result?.isError;
@@ -154,7 +178,7 @@ export const LinkedToolItem: React.FC<LinkedToolItemProps> = React.memo(function
             style={{ color: isHighlighted ? getTriggerColorDef(highlightColor).hex : undefined }}
           />
         }
-        label={linkedTool.name}
+        label={linkedTool.name === 'Agent' ? 'Agent' : `Tool(${linkedTool.name})`}
         summary={summary}
         tokenCount={getToolContextTokens(linkedTool)}
         status={status}
@@ -171,11 +195,26 @@ export const LinkedToolItem: React.FC<LinkedToolItemProps> = React.memo(function
         {/* Edit tool with DiffViewer */}
         {useEditViewer && <EditToolViewer linkedTool={linkedTool} status={status} />}
 
+        {/* Codex apply_patch tool with unified diffs */}
+        {usePatchViewer && <PatchToolViewer linkedTool={linkedTool} status={status} />}
+
         {/* Write tool */}
         {useWriteViewer && <WriteToolViewer linkedTool={linkedTool} />}
 
         {/* Skill tool with instructions */}
         {useSkillViewer && <SkillToolViewer linkedTool={linkedTool} />}
+
+        {/* Codex shell_command with command/cwd/exit/duration + stdout/stderr panes */}
+        {useShellViewer && <CodexShellViewer linkedTool={linkedTool} status={status} />}
+
+        {/* Codex update_plan as a checklist */}
+        {useUpdatePlanViewer && <UpdatePlanViewer linkedTool={linkedTool} />}
+
+        {/* Codex web_search query/queries */}
+        {useWebSearchViewer && <WebSearchViewer linkedTool={linkedTool} />}
+
+        {/* Codex view_image with inline preview + open affordance */}
+        {useViewImageViewer && <ViewImageViewer linkedTool={linkedTool} />}
 
         {/* Default rendering for other tools */}
         {useDefaultViewer && <DefaultToolViewer linkedTool={linkedTool} status={status} />}

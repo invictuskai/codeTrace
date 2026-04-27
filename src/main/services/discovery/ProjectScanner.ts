@@ -28,6 +28,7 @@ import {
   type SessionsByIdsOptions,
   type SessionsPaginationOptions,
 } from '@main/types';
+import { isCodexProjectId } from '@main/utils/codexPaths';
 import { analyzeSessionFileMetadata, extractCwd } from '@main/utils/jsonl';
 import {
   buildSessionPath,
@@ -45,6 +46,7 @@ import * as path from 'path';
 
 import { LocalFileSystemProvider } from '../infrastructure/LocalFileSystemProvider';
 
+import { CodexProjectScanner } from './CodexProjectScanner';
 import { ProjectPathResolver } from './ProjectPathResolver';
 import { SessionContentFilter } from './SessionContentFilter';
 import { SessionSearcher } from './SessionSearcher';
@@ -85,8 +87,14 @@ export class ProjectScanner {
   private readonly subagentLocator: SubagentLocator;
   private readonly sessionSearcher: SessionSearcher;
   private readonly projectPathResolver: ProjectPathResolver;
+  private readonly codexScanner: CodexProjectScanner | null;
 
-  constructor(projectsDir?: string, todosDir?: string, fsProvider?: FileSystemProvider) {
+  constructor(
+    projectsDir?: string,
+    todosDir?: string,
+    fsProvider?: FileSystemProvider,
+    codexSessionsDir?: string | null
+  ) {
     this.projectsDir = projectsDir ?? getProjectsBasePath();
     this.todosDir = todosDir ?? getTodosBasePath();
     this.fsProvider = fsProvider ?? new LocalFileSystemProvider();
@@ -97,6 +105,10 @@ export class ProjectScanner {
     this.subagentLocator = new SubagentLocator(this.projectsDir, this.fsProvider);
     this.sessionSearcher = new SessionSearcher(this.projectsDir, this.fsProvider);
     this.projectPathResolver = new ProjectPathResolver(this.projectsDir, this.fsProvider);
+    this.codexScanner =
+      this.fsProvider.type === 'local' && codexSessionsDir != null
+        ? new CodexProjectScanner(codexSessionsDir, this.fsProvider)
+        : null;
   }
 
   // ===========================================================================
@@ -108,6 +120,16 @@ export class ProjectScanner {
    * @returns Promise resolving to projects sorted by most recent activity
    */
   async scan(): Promise<Project[]> {
+    const [claudeProjects, codexProjects] = await Promise.all([
+      this.scanClaudeProjects(),
+      this.codexScanner ? this.codexScanner.scan() : Promise.resolve([]),
+    ]);
+    return [...claudeProjects, ...codexProjects].sort(
+      (a, b) => (b.mostRecentSession ?? 0) - (a.mostRecentSession ?? 0)
+    );
+  }
+
+  private async scanClaudeProjects(): Promise<Project[]> {
     const startedAt = Date.now();
     try {
       if (!(await this.fsProvider.exists(this.projectsDir))) {
@@ -166,15 +188,19 @@ export class ProjectScanner {
    */
   async scanWithWorktreeGrouping(): Promise<RepositoryGroup[]> {
     try {
-      // 1. Scan all projects using existing logic
-      const projects = await this.scan();
+      const [projects, codexGroups] = await Promise.all([
+        this.scanClaudeProjects(),
+        this.codexScanner ? this.codexScanner.scanWithWorktreeGrouping() : Promise.resolve([]),
+      ]);
 
       if (projects.length === 0) {
-        return [];
+        return codexGroups;
       }
 
-      // 2. Delegate to WorktreeGrouper
-      return this.worktreeGrouper.groupByRepository(projects);
+      const claudeGroups = await this.worktreeGrouper.groupByRepository(projects);
+      return [...claudeGroups, ...codexGroups].sort(
+        (a, b) => (b.mostRecentSession ?? 0) - (a.mostRecentSession ?? 0)
+      );
     } catch (error) {
       logger.error('Error scanning with worktree grouping:', error);
       return [];
@@ -291,6 +317,7 @@ export class ProjectScanner {
 
         return [
           {
+            provider: 'claude',
             id: encodedName,
             path: actualPath,
             name: baseName,
@@ -346,6 +373,7 @@ export class ProjectScanner {
         }
 
         projects.push({
+          provider: 'claude',
           id: compositeId,
           path: actualCwd ?? decodedFallback,
           name: displayName,
@@ -367,6 +395,11 @@ export class ProjectScanner {
    * Handles composite IDs by scanning the base directory and finding the matching subproject.
    */
   async getProject(projectId: string): Promise<Project | null> {
+    if (isCodexProjectId(projectId)) {
+      const projects = await this.codexScanner?.scan();
+      return projects?.find((p) => p.id === projectId) ?? null;
+    }
+
     const baseDir = extractBaseDir(projectId);
     const projectPath = path.join(this.projectsDir, baseDir);
 
@@ -393,6 +426,10 @@ export class ProjectScanner {
    * Filters out sessions that contain only noise messages.
    */
   async listSessions(projectId: string): Promise<Session[]> {
+    if (isCodexProjectId(projectId)) {
+      return this.codexScanner?.listSessions(projectId) ?? [];
+    }
+
     try {
       const baseDir = extractBaseDir(projectId);
       const projectPath = path.join(this.projectsDir, baseDir);
@@ -477,6 +514,17 @@ export class ProjectScanner {
     limit: number = 20,
     options?: SessionsPaginationOptions
   ): Promise<PaginatedSessionsResult> {
+    if (isCodexProjectId(projectId)) {
+      return (
+        (await this.codexScanner?.listSessionsPaginated(projectId, cursor, limit, options)) ?? {
+          sessions: [],
+          nextCursor: null,
+          hasMore: false,
+          totalCount: 0,
+        }
+      );
+    }
+
     const startedAt = Date.now();
     try {
       const includeTotalCount = options?.includeTotalCount ?? false;
@@ -897,6 +945,10 @@ export class ProjectScanner {
    * Gets a single session's metadata.
    */
   async getSession(projectId: string, sessionId: string): Promise<Session | null> {
+    if (isCodexProjectId(projectId)) {
+      return this.codexScanner?.getSession(projectId, sessionId) ?? null;
+    }
+
     const filePath = this.getSessionPath(projectId, sessionId);
 
     if (!(await this.fsProvider.exists(filePath))) {
@@ -916,6 +968,10 @@ export class ProjectScanner {
     sessionId: string,
     options?: SessionsByIdsOptions
   ): Promise<Session | null> {
+    if (isCodexProjectId(projectId)) {
+      return this.codexScanner?.getSessionWithOptions(projectId, sessionId, options) ?? null;
+    }
+
     const filePath = this.getSessionPath(projectId, sessionId);
 
     if (!(await this.fsProvider.exists(filePath))) {
@@ -958,9 +1014,29 @@ export class ProjectScanner {
 
   /**
    * Gets the path to the session JSONL file.
+   *
+   * Synchronous; for Codex projects the path lives in an async-built index, so
+   * the cached value is consulted. If the cache is cold, callers must use the
+   * async `getCodexSessionPath` instead — silently returning '' would lead to
+   * cryptic fs.read failures downstream.
    */
   getSessionPath(projectId: string, sessionId: string): string {
+    if (isCodexProjectId(projectId)) {
+      const cached = this.codexScanner?.getCachedSessionPath(sessionId);
+      if (cached) return cached;
+      throw new Error(
+        `Codex session path is not cached yet; call getCodexSessionPath('${projectId}', '${sessionId}') (async) first.`
+      );
+    }
+
     return buildSessionPath(this.projectsDir, projectId, sessionId);
+  }
+
+  async getCodexSessionPath(projectId: string, sessionId: string): Promise<string | null> {
+    if (!isCodexProjectId(projectId)) {
+      return null;
+    }
+    return this.codexScanner?.getSessionPath(projectId, sessionId) ?? null;
   }
 
   /**
@@ -974,6 +1050,10 @@ export class ProjectScanner {
    * Lists all session file paths for a project.
    */
   async listSessionFiles(projectId: string): Promise<string[]> {
+    if (isCodexProjectId(projectId)) {
+      return this.codexScanner?.listSessionFiles(projectId) ?? [];
+    }
+
     try {
       const baseDir = extractBaseDir(projectId);
       const projectPath = path.join(this.projectsDir, baseDir);
@@ -1019,6 +1099,13 @@ export class ProjectScanner {
    * Checks if a session has a subagents directory (async).
    */
   async hasSubagents(projectId: string, sessionId: string): Promise<boolean> {
+    if (isCodexProjectId(projectId)) {
+      const session = await this.codexScanner?.getSessionWithOptions(projectId, sessionId, {
+        metadataLevel: 'light',
+      });
+      return session?.hasSubagents ?? false;
+    }
+
     return this.subagentLocator.hasSubagents(projectId, sessionId);
   }
 
@@ -1027,6 +1114,10 @@ export class ProjectScanner {
    * Returns NEW structure files first, then OLD structure files.
    */
   async listSubagentFiles(projectId: string, sessionId: string): Promise<string[]> {
+    if (isCodexProjectId(projectId)) {
+      return [];
+    }
+
     return this.subagentLocator.listSubagentFiles(projectId, sessionId);
   }
 
@@ -1061,6 +1152,11 @@ export class ProjectScanner {
    * (e.g. sessions previously flagged as empty) are re-evaluated.
    */
   invalidateCachesForProject(projectId: string): void {
+    if (isCodexProjectId(projectId)) {
+      this.codexScanner?.invalidateCachesForProject(projectId);
+      return;
+    }
+
     // projectId is URL-encoded; the cache keys are absolute file paths containing the decoded dir
     const decoded = decodeURIComponent(projectId);
     const prefix = path.join(this.projectsDir, decoded);
@@ -1096,6 +1192,17 @@ export class ProjectScanner {
     query: string,
     maxResults: number = 50
   ): Promise<SearchSessionsResult> {
+    if (isCodexProjectId(projectId)) {
+      return (
+        (await this.codexScanner?.searchSessions(projectId, query, maxResults)) ?? {
+          results: [],
+          totalMatches: 0,
+          sessionsSearched: 0,
+          query,
+        }
+      );
+    }
+
     return this.sessionSearcher.searchSessions(projectId, query, maxResults);
   }
 
@@ -1136,7 +1243,7 @@ export class ProjectScanner {
       for (let i = 0; i < projects.length; i += searchBatchSize) {
         const batch = projects.slice(i, i + searchBatchSize);
         const batchResults = await Promise.allSettled(
-          batch.map((project) => this.sessionSearcher.searchSessions(project.id, query, maxResults))
+          batch.map((project) => this.searchSessions(project.id, query, maxResults))
         );
 
         for (const result of batchResults) {
@@ -1213,6 +1320,11 @@ export class ProjectScanner {
         }
       }
 
+      const codexMatch = await this.codexScanner?.findSessionById(sessionId);
+      if (codexMatch?.found) {
+        return codexMatch;
+      }
+
       return { found: false };
     } catch (error) {
       logger.error(`Error finding session by ID ${sessionId}:`, error);
@@ -1264,10 +1376,6 @@ export class ProjectScanner {
         if (allMatches.length >= maxResults) break;
       }
 
-      if (allMatches.length === 0) {
-        return { found: false, results: [] };
-      }
-
       const sessions = await this.collectFulfilledInBatches(
         allMatches,
         this.fsProvider.type === 'ssh' ? 4 : 16,
@@ -1283,7 +1391,14 @@ export class ProjectScanner {
         .filter((s): s is { projectId: string; session: Session } => s !== null)
         .sort((a, b) => b.session.createdAt - a.session.createdAt);
 
-      return { found: results.length > 0, results };
+      const codexResults = await this.codexScanner?.findSessionsByPartialId(fragment, maxResults);
+      if (codexResults?.results.length) {
+        results.push(...codexResults.results);
+        results.sort((a, b) => b.session.createdAt - a.session.createdAt);
+      }
+
+      const limitedResults = results.slice(0, maxResults);
+      return { found: limitedResults.length > 0, results: limitedResults };
     } catch (error) {
       logger.error(`Error finding sessions by partial ID ${fragment}:`, error);
       return { found: false, results: [] };

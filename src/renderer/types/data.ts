@@ -18,6 +18,7 @@
 export type {
   PhaseTokenBreakdown,
   Project,
+  ProjectProvider,
   RepositoryGroup,
   SearchResult,
   Session,

@@ -54,7 +54,7 @@ export const EditToolViewer: React.FC<EditToolViewerProps> = ({ linkedTool, stat
             )}
           </div>
           <div
-            className="max-h-96 overflow-auto rounded p-3 font-mono text-xs"
+            className="overflow-auto rounded p-3 font-mono text-xs"
             style={{
               backgroundColor: 'var(--code-bg)',
               border: '1px solid var(--code-border)',

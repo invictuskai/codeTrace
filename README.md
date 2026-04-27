@@ -2,7 +2,7 @@
   <img src="resources/claude.png" alt="Your Claude is coding blind" width="600" />
 </p>
 
-<h1 align="center">claude-devtools</h1>
+<h1 align="center">codeTrace</h1>
 
 <p align="center">
   <strong>Your Claude is coding blind. See everything it did.</strong>
@@ -11,7 +11,6 @@
 <p align="center">
   <sub>The debugging tool for Claude Code. Read session transcripts, inspect tool calls, track token usage — directly from the Claude Code logs on your machine.</sub>
 </p>
-
 
 <p align="center">
   <a href="https://claude-dev.tools"><img src="https://img.shields.io/badge/Website-claude--dev.tools-blue?style=flat-square" alt="Website" /></a>&nbsp;
@@ -69,17 +68,17 @@ The only workaround is `--verbose`, which dumps raw JSON, internal system prompt
 
 ## The Solution
 
-**claude-devtools is the debugging tool for Claude Code.** It reads the Claude Code logs and session transcripts already saved to `~/.claude/` on your machine, and reconstructs *everything*.
+**codeTrace is the debugging tool for Codex and Claude Code.** It reads the agent logs and session transcripts already saved on your machine, and reconstructs _everything_.
 
-| What the terminal hides | What claude-devtools shows |
-|------------------------|---------------------------|
-| `Read 3 files` | Exact file paths, syntax-highlighted content with line numbers |
-| `Searched for 1 pattern` | The regex pattern, every matching file, matched lines |
-| `Edited 2 files` | Inline diffs with added/removed highlighting |
+| What the terminal hides   | What codeTrace shows                                                         |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `Read 3 files`            | Exact file paths, syntax-highlighted content with line numbers               |
+| `Searched for 1 pattern`  | The regex pattern, every matching file, matched lines                        |
+| `Edited 2 files`          | Inline diffs with added/removed highlighting                                 |
 | Three-segment context bar | Per-turn token attribution across 7 categories with compaction visualization |
-| Collapsed subagent output | Full execution trees per agent with tool traces, tokens, duration, cost |
-| Nothing about thinking | Extended thinking content, fully visible |
-| `--verbose` JSON dump | Structured, filterable, navigable interface — no noise |
+| Collapsed subagent output | Full execution trees per agent with tool traces, tokens, duration, cost      |
+| Nothing about thinking    | Extended thinking content, fully visible                                     |
+| `--verbose` JSON dump     | Structured, filterable, navigable interface — no noise                       |
 
 **Zero configuration. No API keys. No wrappers. Works with every session you've ever run.**
 
@@ -90,18 +89,18 @@ The only workaround is `--verbose`, which dumps raw JSON, internal system prompt
 ### Homebrew (macOS)
 
 ```bash
-brew install --cask claude-devtools
+brew install --cask codetrace
 ```
 
 ### Direct Download
 
-| Platform | Download | Notes |
-|----------|----------|-------|
-| **macOS** (Apple Silicon) | [`.dmg`](https://github.com/matt1398/claude-devtools/releases/latest) | Download the `arm64` asset. Drag to Applications. On first launch: right-click → Open |
-| **macOS** (Intel) | [`.dmg`](https://github.com/matt1398/claude-devtools/releases/latest) | Download the `x64` asset. Drag to Applications. On first launch: right-click → Open |
-| **Linux** | [`.AppImage` / `.deb` / `.rpm` / `.pacman`](https://github.com/matt1398/claude-devtools/releases/latest) | Choose the package format for your distro |
-| **Windows** | [`.exe`](https://github.com/matt1398/claude-devtools/releases/latest) | Standard installer. May trigger SmartScreen — click "More info" → "Run anyway" |
-| **Docker** | `docker compose up` | Open `http://localhost:3456`. See [Docker deployment](#docker--standalone-deployment) |
+| Platform                  | Download                                                                                                 | Notes                                                                                 |
+| ------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **macOS** (Apple Silicon) | [`.dmg`](https://github.com/matt1398/claude-devtools/releases/latest)                                    | Download the `arm64` asset. Drag to Applications. On first launch: right-click → Open |
+| **macOS** (Intel)         | [`.dmg`](https://github.com/matt1398/claude-devtools/releases/latest)                                    | Download the `x64` asset. Drag to Applications. On first launch: right-click → Open   |
+| **Linux**                 | [`.AppImage` / `.deb` / `.rpm` / `.pacman`](https://github.com/matt1398/claude-devtools/releases/latest) | Choose the package format for your distro                                             |
+| **Windows**               | [`.exe`](https://github.com/matt1398/claude-devtools/releases/latest)                                    | Standard installer. May trigger SmartScreen — click "More info" → "Run anyway"        |
+| **Docker**                | `docker compose up`                                                                                      | Open `http://localhost:3456`. See [Docker deployment](#docker--standalone-deployment) |
 
 ---
 
@@ -145,7 +144,7 @@ Inspect sessions on any remote machine over SSH. Reads `~/.ssh/config`, supports
 
 ## Not a Wrapper
 
-claude-devtools does **not** wrap, modify, or interfere with Claude Code. It reads session logs that already exist on your machine. Works with sessions from the terminal, IDEs, or any tool that uses Claude Code.
+codeTrace does **not** wrap, modify, or interfere with Codex or Claude Code. It reads session logs that already exist on your machine. Works with sessions from the terminal, IDEs, or any tool that uses Codex or Claude Code.
 
 ---
 
@@ -161,17 +160,17 @@ docker compose up
 Or manually:
 
 ```bash
-docker build -t claude-devtools .
-docker run -p 3456:3456 -v ~/.claude:/data/.claude:ro claude-devtools
+docker build -t codetrace .
+docker run -p 3456:3456 -v ~/.claude:/data/.claude:ro codetrace
 ```
 
-| Variable | Default | Description |
-|----------|---------|-------------|
+| Variable      | Default     | Description                          |
+| ------------- | ----------- | ------------------------------------ |
 | `CLAUDE_ROOT` | `~/.claude` | Path to the `.claude` data directory |
-| `HOST` | `0.0.0.0` | Bind address |
-| `PORT` | `3456` | Listen port |
+| `HOST`        | `0.0.0.0`   | Bind address                         |
+| `PORT`        | `3456`      | Listen port                          |
 
-The standalone server has **zero** outbound network calls. For maximum isolation: `docker run --network none -p 3456:3456 -v ~/.claude:/data/.claude:ro claude-devtools`. See [SECURITY.md](SECURITY.md).
+The standalone server has **zero** outbound network calls. For maximum isolation: `docker run --network none -p 3456:3456 -v ~/.claude:/data/.claude:ro codetrace`. See [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -191,13 +190,23 @@ pnpm install
 pnpm dev
 ```
 
-| Command | Description |
-|---------|-------------|
-| `pnpm dev` | Development with hot reload |
-| `pnpm build` | Production build |
-| `pnpm typecheck` | TypeScript type checking |
-| `pnpm test` | Run all tests |
-| `pnpm check` | Full quality gate (types + lint + test + build) |
+| Command          | Description                                     |
+| ---------------- | ----------------------------------------------- |
+| `pnpm dev`       | Development with hot reload                     |
+| `pnpm build`     | Production build                                |
+| `pnpm typecheck` | TypeScript type checking                        |
+| `pnpm test`      | Run all tests                                   |
+| `pnpm check`     | Full quality gate (types + lint + test + build) |
+
+### Rebuild Windows Installer
+
+```powershell
+Remove-Item -Recurse -Force .\release
+pnpm build
+pnpm exec electron-builder --win --publish never
+```
+
+The installer is written to `release\codeTrace_0.1.0.exe`.
 
 </details>
 

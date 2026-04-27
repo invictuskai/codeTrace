@@ -91,7 +91,11 @@ export const LastOutputDisplay = ({
         <CopyButton text={textContent} />
 
         {/* Content - scrollable */}
-        <div className="max-h-96 overflow-y-auto px-4 py-3" data-search-content>
+        <div
+          className="overflow-y-auto break-words px-4 py-3"
+          style={{ overflowWrap: 'anywhere' }}
+          data-search-content
+        >
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
             {textContent}
           </ReactMarkdown>
@@ -153,7 +157,7 @@ export const LastOutputDisplay = ({
         {/* Content */}
         <div className="px-4 py-3">
           <pre
-            className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words font-mono text-sm"
+            className="overflow-y-auto whitespace-pre-wrap break-words font-mono text-sm"
             style={{ color: 'var(--color-text)' }}
           >
             {lastOutput.toolResult}
@@ -234,7 +238,7 @@ export const LastOutputDisplay = ({
           </div>
 
           {/* Plan content - scrollable */}
-          <div className="max-h-96 overflow-y-auto px-4 py-3">
+          <div className="overflow-y-auto px-4 py-3">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
               {planContent}
             </ReactMarkdown>

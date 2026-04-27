@@ -158,6 +158,11 @@ export interface SessionAPI {
   scrollToLine: (sessionId: string, lineNumber: number) => Promise<void>;
 }
 
+export interface SessionDetailOptions {
+  /** Bypass parsed session cache and rebuild from the underlying JSONL file. */
+  forceRefresh?: boolean;
+}
+
 // =============================================================================
 // CLAUDE.md File Info
 // =============================================================================
@@ -170,31 +175,6 @@ export interface ClaudeMdFileInfo {
   exists: boolean;
   charCount: number;
   estimatedTokens: number;
-}
-
-// =============================================================================
-// Updater API
-// =============================================================================
-
-/**
- * Status payload sent from the main process updater to the renderer.
- */
-export interface UpdaterStatus {
-  type: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
-  version?: string;
-  releaseNotes?: string;
-  progress?: { percent: number; transferred: number; total: number };
-  error?: string;
-}
-
-/**
- * Updater API exposed via preload.
- */
-export interface UpdaterAPI {
-  check: () => Promise<void>;
-  download: () => Promise<void>;
-  install: () => Promise<void>;
-  onStatus: (callback: (event: unknown, status: unknown) => void) => () => void;
 }
 
 // =============================================================================
@@ -341,7 +321,11 @@ export interface ElectronAPI {
   searchAllProjects: (query: string, maxResults?: number) => Promise<SearchSessionsResult>;
   findSessionById: (sessionId: string) => Promise<FindSessionByIdResult>;
   findSessionsByPartialId: (fragment: string) => Promise<FindSessionsByPartialIdResult>;
-  getSessionDetail: (projectId: string, sessionId: string) => Promise<SessionDetail | null>;
+  getSessionDetail: (
+    projectId: string,
+    sessionId: string,
+    options?: SessionDetailOptions
+  ) => Promise<SessionDetail | null>;
   getSessionMetrics: (projectId: string, sessionId: string) => Promise<SessionMetrics | null>;
   getWaterfallData: (projectId: string, sessionId: string) => Promise<WaterfallData | null>;
   getSubagentDetail: (
@@ -417,9 +401,6 @@ export interface ElectronAPI {
     isMaximized: () => Promise<boolean>;
     relaunch: () => Promise<void>;
   };
-
-  // Updater API
-  updater: UpdaterAPI;
 
   // SSH API
   ssh: SshAPI;

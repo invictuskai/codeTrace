@@ -2,13 +2,13 @@
 
 ## Network Activity
 
-claude-devtools makes **zero** outbound network calls to third-party servers. There is no telemetry, analytics, tracking, or data exfiltration of any kind.
+codeTrace makes **zero** outbound network calls to third-party servers. There is no telemetry, analytics, tracking, or data exfiltration of any kind.
 
-| Network activity | When | Mode | User-initiated |
-|---|---|---|---|
-| GitHub Releases API (auto-updater) | App launch | Electron only | No (automatic) |
-| SSH connections | Settings > SSH | Electron only | Yes |
-| HTTP server (`127.0.0.1` or `0.0.0.0`) | When enabled | Both | Yes |
+| Network activity                       | When           | Mode          | User-initiated |
+| -------------------------------------- | -------------- | ------------- | -------------- |
+| GitHub Releases API (auto-updater)     | App launch     | Electron only | No (automatic) |
+| SSH connections                        | Settings > SSH | Electron only | Yes            |
+| HTTP server (`127.0.0.1` or `0.0.0.0`) | When enabled   | Both          | Yes            |
 
 ### Standalone / Docker mode
 
@@ -26,8 +26,8 @@ In standalone mode (Docker or `node dist-standalone/index.cjs`), the auto-update
 For maximum trust, run the Docker container with `--network none`:
 
 ```bash
-docker build -t claude-devtools .
-docker run --network none -p 3456:3456 -v ~/.claude:/data/.claude:ro claude-devtools
+docker build -t codetrace .
+docker run --network none -p 3456:3456 -v ~/.claude:/data/.claude:ro codetrace
 ```
 
 Or with Docker Compose, uncomment `network_mode: "none"` in `docker-compose.yml`.
@@ -48,6 +48,7 @@ Only the latest release is supported with security fixes.
 Please report vulnerabilities privately and do not open public issues for undisclosed security problems.
 
 Include:
+
 - affected version/commit
 - vulnerability description
 - impact assessment

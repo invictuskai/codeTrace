@@ -1,5 +1,5 @@
 /**
- * Parsed message types and type guards for claude-devtools.
+ * Parsed message types and type guards for codeTrace.
  *
  * ParsedMessage is the application's internal representation after parsing
  * raw JSONL entries. This module also contains type guards for classifying

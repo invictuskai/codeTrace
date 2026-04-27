@@ -16,6 +16,7 @@ import {
   type ToolCall,
   type ToolResult,
 } from '@main/types';
+import { isCodexProjectId } from '@main/utils/codexPaths';
 import {
   calculateMetrics,
   extractTextContent,
@@ -25,6 +26,8 @@ import {
 import * as path from 'path';
 
 import { type ProjectScanner } from '../discovery/ProjectScanner';
+
+import { parseCodexSessionFile } from './CodexSessionParser';
 
 /**
  * Result of parsing a session file.
@@ -66,6 +69,14 @@ export class SessionParser {
    * Parse a session JSONL file and return structured data.
    */
   async parseSession(projectId: string, sessionId: string): Promise<ParsedSession> {
+    if (isCodexProjectId(projectId)) {
+      const sessionPath = await this.projectScanner.getCodexSessionPath(projectId, sessionId);
+      if (!sessionPath) {
+        return this.processMessages([]);
+      }
+      return parseCodexSessionFile(sessionPath, this.projectScanner.getFileSystemProvider());
+    }
+
     const sessionPath = this.projectScanner.getSessionPath(projectId, sessionId);
     return this.parseSessionFile(sessionPath);
   }

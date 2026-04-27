@@ -46,6 +46,18 @@ export function hasEditContent(linkedTool: LinkedToolItem): boolean {
 }
 
 /**
+ * Checks if a Codex apply_patch tool has patch or unified diff content to display.
+ */
+export function hasPatchContent(linkedTool: LinkedToolItem): boolean {
+  if (typeof linkedTool.input.patch === 'string' && linkedTool.input.patch.length > 0) {
+    return true;
+  }
+
+  const toolUseResult = linkedTool.result?.toolUseResult as Record<string, unknown> | undefined;
+  return toolUseResult?.changes != null;
+}
+
+/**
  * Checks if a Write tool has content to display.
  */
 export function hasWriteContent(linkedTool: LinkedToolItem): boolean {
@@ -55,4 +67,46 @@ export function hasWriteContent(linkedTool: LinkedToolItem): boolean {
   if (toolUseResult?.content != null || toolUseResult?.filePath != null) return true;
 
   return false;
+}
+
+/**
+ * Checks if a Codex shell_command tool has command/output data to display.
+ * Either input.command (raw string from function arguments) or
+ * toolUseResult.command (array form recovered from exec_command_end) suffices.
+ */
+export function hasShellCommandContent(linkedTool: LinkedToolItem): boolean {
+  if (typeof linkedTool.input.command === 'string' && linkedTool.input.command.length > 0) {
+    return true;
+  }
+
+  const toolUseResult = linkedTool.result?.toolUseResult as Record<string, unknown> | undefined;
+  return toolUseResult?.command != null;
+}
+
+/**
+ * Checks if an update_plan tool call carries a plan array.
+ */
+export function hasUpdatePlanContent(linkedTool: LinkedToolItem): boolean {
+  return Array.isArray(linkedTool.input.plan);
+}
+
+/**
+ * Checks if a web_search tool call carries query data.
+ */
+export function hasWebSearchContent(linkedTool: LinkedToolItem): boolean {
+  if (typeof linkedTool.input.query === 'string' && linkedTool.input.query.length > 0) {
+    return true;
+  }
+  if (Array.isArray(linkedTool.input.queries) && linkedTool.input.queries.length > 0) {
+    return true;
+  }
+  const action = linkedTool.input.action as Record<string, unknown> | undefined;
+  return typeof action?.query === 'string' && action.query.length > 0;
+}
+
+/**
+ * Checks if a view_image tool call carries a path.
+ */
+export function hasViewImageContent(linkedTool: LinkedToolItem): boolean {
+  return typeof linkedTool.input.path === 'string' && linkedTool.input.path.length > 0;
 }

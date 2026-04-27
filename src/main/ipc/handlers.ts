@@ -42,28 +42,17 @@ import {
   registerSubagentHandlers,
   removeSubagentHandlers,
 } from './subagents';
-import {
-  initializeUpdaterHandlers,
-  registerUpdaterHandlers,
-  removeUpdaterHandlers,
-} from './updater';
 import { registerUtilityHandlers, removeUtilityHandlers } from './utility';
 import { registerValidationHandlers, removeValidationHandlers } from './validation';
 import { registerWindowHandlers, removeWindowHandlers } from './window';
 
-import type {
-  ServiceContext,
-  ServiceContextRegistry,
-  SshConnectionManager,
-  UpdaterService,
-} from '../services';
+import type { ServiceContext, ServiceContextRegistry, SshConnectionManager } from '../services';
 
 /**
  * Initializes IPC handlers with service registry.
  */
 export function initializeIpcHandlers(
   registry: ServiceContextRegistry,
-  updater: UpdaterService,
   sshManager: SshConnectionManager,
   contextCallbacks: {
     rewire: (context: ServiceContext) => void;
@@ -76,7 +65,6 @@ export function initializeIpcHandlers(
   initializeSessionHandlers(registry);
   initializeSearchHandlers(registry);
   initializeSubagentHandlers(registry);
-  initializeUpdaterHandlers(updater);
   initializeSshHandlers(sshManager, registry, contextCallbacks.rewire);
   initializeContextHandlers(registry, contextCallbacks.rewire);
   initializeConfigHandlers({
@@ -92,7 +80,6 @@ export function initializeIpcHandlers(
   registerUtilityHandlers(ipcMain);
   registerNotificationHandlers(ipcMain);
   registerConfigHandlers(ipcMain);
-  registerUpdaterHandlers(ipcMain);
   registerSshHandlers(ipcMain);
   registerContextHandlers(ipcMain);
   registerWindowHandlers(ipcMain);
@@ -113,7 +100,6 @@ export function removeIpcHandlers(): void {
   removeUtilityHandlers(ipcMain);
   removeNotificationHandlers(ipcMain);
   removeConfigHandlers(ipcMain);
-  removeUpdaterHandlers(ipcMain);
   removeSshHandlers(ipcMain);
   removeContextHandlers(ipcMain);
   removeWindowHandlers(ipcMain);

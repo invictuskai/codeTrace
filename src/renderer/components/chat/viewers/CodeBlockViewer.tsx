@@ -123,7 +123,7 @@ export const CodeBlockViewer: React.FC<CodeBlockViewerProps> = ({
   language,
   startLine = 1,
   endLine,
-  maxHeight = 'max-h-96',
+  maxHeight = '',
 }): React.JSX.Element => {
   const [isCopied, setIsCopied] = useState(false);
 

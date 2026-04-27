@@ -1,11 +1,11 @@
 # =============================================================================
-# claude-devtools standalone Docker image
+# codeTrace standalone Docker image
 #
 # Runs the HTTP server without Electron, serving the full UI over HTTP.
 # Mount your ~/.claude directory to make session data available.
 #
-# Build:  docker build -t claude-devtools .
-# Run:    docker run -p 3456:3456 -v ~/.claude:/data/.claude:ro claude-devtools
+# Build:  docker build -t codetrace .
+# Run:    docker run -p 3456:3456 -v ~/.claude:/data/.claude:ro codetrace
 # =============================================================================
 
 FROM node:20-slim AS builder

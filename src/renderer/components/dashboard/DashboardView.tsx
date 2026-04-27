@@ -13,13 +13,58 @@ import { api } from '@renderer/api';
 import { useStore } from '@renderer/store';
 import { formatShortcut } from '@renderer/utils/stringUtils';
 import { createLogger } from '@shared/utils/logger';
-import { useShallow } from 'zustand/react/shallow';
-
-const logger = createLogger('Component:DashboardView');
 import { formatDistanceToNow } from 'date-fns';
 import { Command, FolderGit2, FolderOpen, GitBranch, Search, Settings } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 
-import type { RepositoryGroup } from '@renderer/types/data';
+import { type BrandMarkProps, ClaudeMark, OpenAIMark } from './providerIcons';
+
+import type { ProjectProvider, RepositoryGroup } from '@renderer/types/data';
+
+const logger = createLogger('Component:DashboardView');
+
+// =============================================================================
+// Provider visual metadata
+// =============================================================================
+
+type ProviderIcon = (props: Readonly<BrandMarkProps>) => React.JSX.Element;
+
+interface ProviderMeta {
+  label: string;
+  shortLabel: string;
+  emptyPath: string;
+  Icon: ProviderIcon;
+  accentText: string;
+  accentBg: string;
+  accentBorder: string;
+  accentDot: string;
+}
+
+const PROVIDER_META: Record<ProjectProvider, ProviderMeta> = {
+  claude: {
+    label: 'Claude Code Directories',
+    shortLabel: 'Claude Code',
+    emptyPath: '~/.claude/projects/',
+    Icon: ClaudeMark,
+    accentText: 'text-[#B85C38]',
+    accentBg: 'bg-[#B85C38]/15',
+    accentBorder: 'border-[#B85C38]/45',
+    accentDot: 'bg-[#B85C38]',
+  },
+  codex: {
+    label: 'Codex Directories',
+    shortLabel: 'Codex',
+    emptyPath: '~/.codex/sessions/',
+    Icon: OpenAIMark,
+    accentText: 'text-[#087A63]',
+    accentBg: 'bg-[#087A63]/15',
+    accentBorder: 'border-[#087A63]/45',
+    accentDot: 'bg-[#087A63]',
+  },
+};
+
+const getProviderMeta = (provider: ProjectProvider | undefined): ProviderMeta =>
+  PROVIDER_META[provider ?? 'claude'];
 
 // =============================================================================
 // Command Search Input
@@ -76,7 +121,11 @@ const CommandSearch = ({ value, onChange }: Readonly<CommandSearchProps>): React
         <button
           onClick={() => openCommandPalette()}
           className="flex shrink-0 items-center gap-1 transition-opacity hover:opacity-80"
-          title={selectedProjectId ? `Search in sessions (${formatShortcut('K')})` : `Search projects (${formatShortcut('K')})`}
+          title={
+            selectedProjectId
+              ? `Search in sessions (${formatShortcut('K')})`
+              : `Search projects (${formatShortcut('K')})`
+          }
         >
           <kbd className="flex h-5 items-center justify-center rounded border border-border bg-surface-overlay px-1.5 text-[10px] font-medium text-text-muted">
             <Command className="size-2.5" />
@@ -153,6 +202,9 @@ const RepositoryCard = ({
   const projectPath = repo.worktrees[0]?.path || '';
   const formattedPath = formatProjectPath(projectPath);
 
+  const meta = getProviderMeta(repo.provider);
+  const ProviderIcon = meta.Icon;
+
   return (
     <button
       onClick={onClick}
@@ -162,9 +214,18 @@ const RepositoryCard = ({
           : 'bg-surface/50 border-border hover:border-border-emphasis hover:bg-surface-raised'
       } `}
     >
-      {/* Icon with subtle border */}
-      <div className="mb-3 flex size-8 items-center justify-center rounded-sm border border-border bg-surface-overlay transition-colors duration-300 group-hover:border-border-emphasis">
-        <FolderGit2 className="size-4 text-text-secondary transition-colors group-hover:text-text" />
+      {/* Provider accent strip */}
+      <span
+        aria-hidden="true"
+        className={`absolute inset-y-0 left-0 w-[2px] ${meta.accentDot} opacity-60 transition-opacity duration-300 group-hover:opacity-100`}
+      />
+
+      {/* Provider icon badge */}
+      <div
+        className={`mb-3 flex size-8 items-center justify-center rounded-sm border ${meta.accentBorder} ${meta.accentBg} transition-colors duration-300`}
+        title={meta.shortLabel}
+      >
+        <ProviderIcon className={`size-4 ${meta.accentText}`} />
       </div>
 
       {/* Project name */}
@@ -257,6 +318,73 @@ interface ProjectsGridProps {
   maxProjects?: number;
 }
 
+interface RepositorySectionProps {
+  provider: ProjectProvider;
+  repos: RepositoryGroup[];
+  searchQuery: string;
+  onSelect: (repoId: string) => void;
+  showNewProjectCard?: boolean;
+}
+
+const RepositorySection = ({
+  provider,
+  repos,
+  searchQuery,
+  onSelect,
+  showNewProjectCard,
+}: Readonly<RepositorySectionProps>): React.JSX.Element => {
+  const hasSearch = !!searchQuery.trim();
+  const meta = getProviderMeta(provider);
+  const ProviderIcon = meta.Icon;
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex size-5 items-center justify-center rounded-sm border ${meta.accentBorder} ${meta.accentBg}`}
+            aria-hidden="true"
+          >
+            <ProviderIcon className={`size-3 ${meta.accentText}`} />
+          </span>
+          <h3 className="text-xs font-medium uppercase tracking-wider text-text-secondary">
+            {meta.label}
+          </h3>
+        </div>
+        <span className="text-[10px] text-text-muted">
+          {repos.length} {repos.length === 1 ? 'directory' : 'directories'}
+        </span>
+      </div>
+
+      {repos.length === 0 ? (
+        <div className="flex min-h-[120px] flex-col items-center justify-center rounded-sm border border-dashed border-border px-8 py-10">
+          <div
+            className={`mb-3 flex size-10 items-center justify-center rounded-sm border ${meta.accentBorder} ${meta.accentBg}`}
+          >
+            <ProviderIcon className={`size-5 ${meta.accentText}`} />
+          </div>
+          <p className="mb-1 text-sm text-text-secondary">
+            {hasSearch ? 'No matches found' : 'No directories found'}
+          </p>
+          <p className="font-mono text-xs text-text-muted">{meta.emptyPath}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
+          {repos.map((repo) => (
+            <RepositoryCard
+              key={repo.id}
+              repo={repo}
+              onClick={() => onSelect(repo.id)}
+              isHighlighted={hasSearch}
+            />
+          ))}
+          {showNewProjectCard && !hasSearch && <NewProjectCard />}
+        </div>
+      )}
+    </section>
+  );
+};
+
 const ProjectsGrid = ({
   searchQuery,
   maxProjects = 12,
@@ -280,7 +408,7 @@ const ProjectsGrid = ({
   // Filter projects based on search query
   const filteredRepos = useMemo(() => {
     if (!searchQuery.trim()) {
-      return repositoryGroups.slice(0, maxProjects);
+      return repositoryGroups;
     }
 
     const query = searchQuery.toLowerCase().trim();
@@ -293,8 +421,27 @@ const ProjectsGrid = ({
         if (path.toLowerCase().includes(query)) return true;
         return false;
       })
-      .slice(0, maxProjects);
+      .slice(0, maxProjects * 2);
   }, [repositoryGroups, searchQuery, maxProjects]);
+
+  const reposByProvider = useMemo(() => {
+    const grouped: Record<ProjectProvider, RepositoryGroup[]> = {
+      claude: [],
+      codex: [],
+    };
+
+    for (const repo of filteredRepos) {
+      const provider = repo.provider ?? 'claude';
+      grouped[provider].push(repo);
+    }
+
+    if (!searchQuery.trim()) {
+      grouped.claude = grouped.claude.slice(0, maxProjects);
+      grouped.codex = grouped.codex.slice(0, maxProjects);
+    }
+
+    return grouped;
+  }, [filteredRepos, searchQuery, maxProjects]);
 
   if (repositoryGroupsLoading) {
     // Organic widths per card — no repeating stamp
@@ -375,16 +522,20 @@ const ProjectsGrid = ({
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
-      {filteredRepos.map((repo) => (
-        <RepositoryCard
-          key={repo.id}
-          repo={repo}
-          onClick={() => selectRepository(repo.id)}
-          isHighlighted={!!searchQuery.trim()}
-        />
-      ))}
-      {!searchQuery.trim() && <NewProjectCard />}
+    <div className="space-y-8">
+      <RepositorySection
+        provider="claude"
+        repos={reposByProvider.claude}
+        searchQuery={searchQuery}
+        onSelect={selectRepository}
+        showNewProjectCard
+      />
+      <RepositorySection
+        provider="codex"
+        repos={reposByProvider.codex}
+        searchQuery={searchQuery}
+        onSelect={selectRepository}
+      />
     </div>
   );
 };
@@ -408,33 +559,28 @@ export const DashboardView = (): React.JSX.Element => {
       {/* Content */}
       <div className="relative mx-auto max-w-5xl px-8 py-12">
         {/* Command Search */}
-        <div className="mb-12">
+        <div className="mb-8">
           <CommandSearch value={searchQuery} onChange={setSearchQuery} />
         </div>
 
-        {/* Section header */}
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xs font-medium uppercase tracking-wider text-text-muted">
-            {searchQuery.trim() ? 'Search Results' : 'Recent Projects'}
-          </h2>
-          <div className="flex items-center gap-3">
-            {searchQuery.trim() && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="text-xs text-text-muted transition-colors hover:text-text-secondary"
-              >
-                Clear search
-              </button>
-            )}
+        {/* Inline toolbar (no section header) */}
+        <div className="mb-6 flex items-center justify-end gap-3">
+          {searchQuery.trim() && (
             <button
-              onClick={() => openSettingsTab('general')}
-              className="flex items-center gap-1.5 text-xs text-text-muted transition-colors hover:text-text-secondary"
-              title="Change Claude data folder"
+              onClick={() => setSearchQuery('')}
+              className="text-xs text-text-muted transition-colors hover:text-text-secondary"
             >
-              <Settings className="size-3" />
-              Change default folder
+              Clear search
             </button>
-          </div>
+          )}
+          <button
+            onClick={() => openSettingsTab('general')}
+            className="flex items-center gap-1.5 text-xs text-text-muted transition-colors hover:text-text-secondary"
+            title="Change Claude data folder"
+          >
+            <Settings className="size-3" />
+            Change default folder
+          </button>
         </div>
 
         {/* Projects Grid */}

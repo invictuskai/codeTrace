@@ -8,10 +8,11 @@ import { extractSlashInfo, isCommandContent } from '@shared/utils/contentSanitiz
 import { getModelColorClass } from '@shared/utils/modelParser';
 import { estimateTokens } from '@shared/utils/tokenFormatting';
 import { format } from 'date-fns';
-import { Bot, ChevronDown, Clock } from 'lucide-react';
+import { ChevronDown, Clock } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { TokenUsageDisplay } from '../common/TokenUsageDisplay';
+import { ClaudeMark, OPENAI_GREEN, OpenAIMark } from '../dashboard/providerIcons';
 
 import { ContextBadge } from './ContextBadge';
 import { DisplayItemList } from './DisplayItemList';
@@ -115,7 +116,7 @@ function containsToolUseId(items: AIGroupDisplayItem[], toolUseId: string): bool
  *
  * Features:
  * - Card container with subtle zinc styling
- * - Clickable header with Bot icon, "Claude" label, and items summary
+ * - Clickable header with provider brand mark, provider label, and items summary
  * - LastOutputDisplay: Always visible last output (text or tool result)
  * - DisplayItemList: Shows items when expanded with inline expansion support
  * - Manages local expansion state and inline item expansion
@@ -140,6 +141,10 @@ const AIChatGroupInner = ({
   const projectRoot = useStore((s) => {
     const td = tabId ? s.tabSessionData[tabId] : null;
     return (td?.sessionDetail ?? s.sessionDetail)?.session?.projectPath;
+  });
+  const sessionProvider = useStore((s) => {
+    const td = tabId ? s.tabSessionData[tabId] : null;
+    return (td?.sessionDetail ?? s.sessionDetail)?.session?.provider ?? 'claude';
   });
   const isSessionOngoing = useStore((s) => {
     const id = s.selectedSessionId;
@@ -296,7 +301,8 @@ const AIChatGroupInner = ({
     [enhanced.displayItems]
   );
 
-  // Get expanded item IDs for this AI group (per-tab)
+  // Get the set of manually-expanded item IDs for this AI group (per-tab).
+  // Display items default to collapsed; the set tracks user/programmatic expansions.
   const expandedItemIds = useMemo(
     () => getExpandedDisplayItemIds(aiGroup.id),
     [getExpandedDisplayItemIds, aiGroup.id]
@@ -391,26 +397,36 @@ const AIChatGroupInner = ({
     <div className="space-y-3 border-l-2 pl-3" style={{ borderColor: 'var(--chat-ai-border)' }}>
       {/* Header Row */}
       {hasToggleContent && (
-        <div className="flex items-center gap-2">
-          {/* Clickable toggle area */}
-          <div
-            role="button"
-            tabIndex={0}
-            className="group flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden"
-            onClick={() => toggleAIGroupExpansion(aiGroup.id)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                toggleAIGroupExpansion(aiGroup.id);
-              }
-            }}
-          >
-            <Bot className="size-4 shrink-0" style={{ color: COLOR_TEXT_SECONDARY }} />
+        <div
+          role="button"
+          tabIndex={0}
+          className="group flex cursor-pointer items-center gap-2"
+          onClick={() => toggleAIGroupExpansion(aiGroup.id)}
+          onKeyDown={(e) => {
+            if (e.target !== e.currentTarget) {
+              return;
+            }
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleAIGroupExpansion(aiGroup.id);
+            }
+          }}
+        >
+          {/* Toggle area */}
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+            {sessionProvider === 'codex' ? (
+              <OpenAIMark className="size-4 shrink-0" style={{ color: OPENAI_GREEN }} />
+            ) : (
+              <ClaudeMark
+                className="size-4 shrink-0"
+                style={{ color: '#D97757' /* Anthropic brand orange */ }}
+              />
+            )}
             <span
               className="shrink-0 text-xs font-semibold"
               style={{ color: COLOR_TEXT_SECONDARY }}
             >
-              Claude
+              {sessionProvider === 'codex' ? 'Codex' : 'Claude'}
             </span>
 
             {/* Main agent model */}
@@ -449,7 +465,7 @@ const AIChatGroupInner = ({
             />
           </div>
 
-          {/* Right side: Context badge, Token usage, Timestamp (non-clickable) */}
+          {/* Right side: Context badge, token usage, duration, timestamp */}
           <div className="flex shrink-0 items-center gap-2">
             {/* Context injection badge (CLAUDE.md, mentioned files, tool outputs) */}
             {contextStats && <ContextBadge stats={contextStats} projectRoot={projectRoot} />}

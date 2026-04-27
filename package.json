@@ -1,11 +1,11 @@
 {
-  "name": "claude-devtools",
+  "name": "code-trace",
   "type": "module",
   "version": "0.1.0",
-  "description": "Desktop app that visualizes Claude Code session execution — explore conversations, track context usage, and analyze tool calls",
+  "description": "Desktop app that visualizes Codex and Claude Code session execution — explore conversations, track context usage, and analyze tool calls",
   "license": "MIT",
   "author": {
-    "name": "claude-devtools contributors",
+    "name": "codeTrace contributors",
     "email": "matt1398@users.noreply.github.com"
   },
   "homepage": "https://github.com/matt1398/claude-devtools",
@@ -21,11 +21,11 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "dist": "electron-builder --mac --win --linux",
-    "dist:mac": "electron-builder --mac --publish always",
-    "dist:mac:arm64": "electron-builder --mac --arm64 --publish always",
-    "dist:mac:x64": "electron-builder --mac --x64 --publish always",
-    "dist:win": "electron-builder --win --publish always",
-    "dist:linux": "electron-builder --linux --publish always",
+    "dist:mac": "electron-builder --mac",
+    "dist:mac:arm64": "electron-builder --mac --arm64",
+    "dist:mac:x64": "electron-builder --mac --x64",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
@@ -55,7 +55,6 @@
     "@fastify/static": "^9.0.0",
     "@tanstack/react-virtual": "^3.10.8",
     "date-fns": "^3.6.0",
-    "electron-updater": "^6.7.3",
     "fastify": "^5.7.4",
     "idb-keyval": "^6.2.2",
     "lucide-react": "^0.562.0",
@@ -114,8 +113,9 @@
     "vitest": "^3.1.4"
   },
   "build": {
-    "appId": "com.claudecode.context",
-    "productName": "claude-devtools",
+    "appId": "com.codetrace.app",
+    "productName": "codeTrace",
+    "artifactName": "${productName}_${version}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -171,13 +171,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "releaseType": "draft"
-      }
-    ]
+    }
   },
   "packageManager": "pnpm@10.25.0+sha512.5e82639027af37cf832061bcc6d639c219634488e0f2baebe785028a793de7b525ffcd3f7ff574f5e9860654e098fe852ba8ac5dd5cefe1767d23a020a92f501"
 }

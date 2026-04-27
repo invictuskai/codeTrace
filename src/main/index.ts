@@ -1,5 +1,5 @@
 /**
- * Main process entry point for claude-devtools.
+ * Main process entry point for codeTrace.
  *
  * Responsibilities:
  * - Initialize Electron app and main window
@@ -75,7 +75,6 @@ import {
   ServiceContext,
   ServiceContextRegistry,
   SshConnectionManager,
-  UpdaterService,
 } from './services';
 
 // =============================================================================
@@ -87,7 +86,6 @@ let mainWindow: BrowserWindow | null = null;
 // Service registry and global services
 let contextRegistry: ServiceContextRegistry;
 let notificationManager: NotificationManager;
-let updaterService: UpdaterService;
 let sshConnectionManager: SshConnectionManager;
 let httpServer: HttpServer;
 
@@ -271,12 +269,10 @@ function initializeServices(): void {
   // Wire file watcher events for local context
   wireFileWatcherEvents(localContext);
 
-  // Initialize updater service
-  updaterService = new UpdaterService();
   httpServer = new HttpServer();
 
   // Initialize IPC handlers with registry
-  initializeIpcHandlers(contextRegistry, updaterService, sshConnectionManager, {
+  initializeIpcHandlers(contextRegistry, sshConnectionManager, {
     rewire: rewireContextEvents,
     full: onContextSwitched,
     onClaudeRootPathUpdated: (_claudeRootPath: string | null) => {
@@ -366,7 +362,6 @@ async function startHttpServer(
         subagentResolver: activeContext.subagentResolver,
         chunkBuilder: activeContext.chunkBuilder,
         dataCache: activeContext.dataCache,
-        updaterService,
         sshConnectionManager,
       },
       modeSwitchHandler,
@@ -448,7 +443,7 @@ function createWindow(): void {
     backgroundColor: '#1a1a1a',
     ...(useNativeTitleBar ? {} : { titleBarStyle: 'hidden' as const }),
     ...(isMac && { trafficLightPosition: getTrafficLightPositionForZoom(1) }),
-    title: 'claude-devtools',
+    title: 'codeTrace',
   });
 
   // Load the renderer
@@ -461,12 +456,10 @@ function createWindow(): void {
     });
   }
 
-  // Set traffic light position + notify renderer on first load, and auto-check for updates
+  // Set traffic light position + notify renderer on first load.
   mainWindow.webContents.on('did-finish-load', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       syncTrafficLightPosition(mainWindow);
-      // Auto-check for updates 3 seconds after window loads
-      setTimeout(() => updaterService.checkForUpdates(), 3000);
     }
   });
 
@@ -541,9 +534,6 @@ function createWindow(): void {
     if (notificationManager) {
       notificationManager.setMainWindow(null);
     }
-    if (updaterService) {
-      updaterService.setMainWindow(null);
-    }
   });
 
   // Handle renderer process crashes (render-process-gone replaces deprecated 'crashed' event)
@@ -552,12 +542,9 @@ function createWindow(): void {
     // Could show an error dialog or attempt to reload the window
   });
 
-  // Set main window reference for notification manager and updater
+  // Set main window reference for notification manager.
   if (notificationManager) {
     notificationManager.setMainWindow(mainWindow);
-  }
-  if (updaterService) {
-    updaterService.setMainWindow(mainWindow);
   }
 
   logger.info('Main window created');

@@ -15,7 +15,6 @@ import { registerSearchRoutes } from './search';
 import { registerSessionRoutes } from './sessions';
 import { registerSshRoutes } from './ssh';
 import { registerSubagentRoutes } from './subagents';
-import { registerUpdaterRoutes } from './updater';
 import { registerUtilityRoutes } from './utility';
 import { registerValidationRoutes } from './validation';
 
@@ -25,7 +24,6 @@ import type {
   ProjectScanner,
   SessionParser,
   SubagentResolver,
-  UpdaterService,
 } from '../services';
 import type { SshConnectionManager } from '../services/infrastructure/SshConnectionManager';
 import type { FastifyInstance } from 'fastify';
@@ -38,7 +36,6 @@ export interface HttpServices {
   subagentResolver: SubagentResolver;
   chunkBuilder: ChunkBuilder;
   dataCache: DataCache;
-  updaterService: UpdaterService;
   sshConnectionManager: SshConnectionManager;
 }
 
@@ -56,7 +53,6 @@ export function registerHttpRoutes(
   registerValidationRoutes(app);
   registerUtilityRoutes(app);
   registerSshRoutes(app, services.sshConnectionManager, sshModeSwitchCallback);
-  registerUpdaterRoutes(app, services);
   registerEventRoutes(app);
 
   logger.info('All HTTP routes registered');

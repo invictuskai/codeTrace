@@ -4,6 +4,8 @@
 
 import type { ContentBlock, ToolCall, ToolResult } from '../types';
 
+const SUBAGENT_TOOL_NAMES = new Set(['Task', 'spawn_agent']);
+
 /**
  * Extract tool calls from content blocks.
  */
@@ -17,7 +19,7 @@ export function extractToolCalls(content: ContentBlock[] | string): ToolCall[] {
   for (const block of content) {
     if (block.type === 'tool_use' && block.id && block.name) {
       const input = block.input ?? {};
-      const isTask = block.name === 'Task';
+      const isTask = SUBAGENT_TOOL_NAMES.has(block.name);
 
       const toolCall: ToolCall = {
         id: block.id,
@@ -28,8 +30,14 @@ export function extractToolCalls(content: ContentBlock[] | string): ToolCall[] {
 
       // Extract Task-specific info
       if (isTask) {
-        toolCall.taskDescription = input.description as string | undefined;
-        toolCall.taskSubagentType = input.subagent_type as string | undefined;
+        toolCall.taskDescription =
+          (input.description as string | undefined) ??
+          (input.message as string | undefined) ??
+          (input.prompt as string | undefined);
+        toolCall.taskSubagentType =
+          (input.subagent_type as string | undefined) ??
+          (input.agent_type as string | undefined) ??
+          (input.model as string | undefined);
       }
 
       toolCalls.push(toolCall);

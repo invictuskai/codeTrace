@@ -1,5 +1,5 @@
 # =============================================================================
-# claude-devtools — Docker Compose
+# codeTrace — Docker Compose
 #
 # Quick start:
 #   docker compose up
@@ -13,10 +13,10 @@
 # =============================================================================
 
 services:
-  claude-devtools:
+  codetrace:
     build: .
     ports:
-      - "3456:3456"
+      - '3456:3456'
     volumes:
       - ${CLAUDE_DIR:-~/.claude}:/data/.claude:ro
     environment:

@@ -137,78 +137,79 @@ export function registerSessionRoutes(app: FastifyInstance, services: HttpServic
   );
 
   // Session detail
-  app.get<{ Params: { projectId: string; sessionId: string } }>(
-    '/api/projects/:projectId/sessions/:sessionId',
-    async (request) => {
-      try {
-        const validatedProject = validateProjectId(request.params.projectId);
-        const validatedSession = validateSessionId(request.params.sessionId);
-        if (!validatedProject.valid || !validatedSession.valid) {
-          logger.error(
-            `GET session-detail rejected: ${validatedProject.error ?? validatedSession.error ?? 'unknown'}`
-          );
-          return null;
-        }
-
-        const safeProjectId = validatedProject.value!;
-        const safeSessionId = validatedSession.value!;
-        const cacheKey = DataCache.buildKey(safeProjectId, safeSessionId);
-
-        // Check cache first
-        let sessionDetail = services.dataCache.get(cacheKey);
-        if (sessionDetail) {
-          return sessionDetail;
-        }
-
-        const fsType = services.projectScanner.getFileSystemProvider().type;
-        // In SSH mode, avoid an extra deep metadata scan before full parse.
-        const session = await services.projectScanner.getSessionWithOptions(
-          safeProjectId,
-          safeSessionId,
-          {
-            metadataLevel: fsType === 'ssh' ? 'light' : 'deep',
-          }
-        );
-        if (!session) {
-          logger.error(`Session not found: ${safeSessionId}`);
-          return null;
-        }
-
-        // Parse session messages
-        const parsedSession = await services.sessionParser.parseSession(
-          safeProjectId,
-          safeSessionId
-        );
-
-        // Resolve subagents
-        const subagents = await services.subagentResolver.resolveSubagents(
-          safeProjectId,
-          safeSessionId,
-          parsedSession.taskCalls,
-          parsedSession.messages
-        );
-        session.hasSubagents = subagents.length > 0;
-
-        // Build session detail with chunks
-        sessionDetail = services.chunkBuilder.buildSessionDetail(
-          session,
-          parsedSession.messages,
-          subagents
-        );
-
-        // Cache the result
-        services.dataCache.set(cacheKey, sessionDetail);
-
-        return sessionDetail;
-      } catch (error) {
+  app.get<{
+    Params: { projectId: string; sessionId: string };
+    Querystring: { refresh?: string };
+  }>('/api/projects/:projectId/sessions/:sessionId', async (request) => {
+    try {
+      const validatedProject = validateProjectId(request.params.projectId);
+      const validatedSession = validateSessionId(request.params.sessionId);
+      if (!validatedProject.valid || !validatedSession.valid) {
         logger.error(
-          `Error in GET session-detail for ${request.params.projectId}/${request.params.sessionId}:`,
-          error
+          `GET session-detail rejected: ${validatedProject.error ?? validatedSession.error ?? 'unknown'}`
         );
         return null;
       }
+
+      const safeProjectId = validatedProject.value!;
+      const safeSessionId = validatedSession.value!;
+      const cacheKey = DataCache.buildKey(safeProjectId, safeSessionId);
+      const forceRefresh = request.query.refresh === '1' || request.query.refresh === 'true';
+      if (forceRefresh) {
+        services.dataCache.invalidateSession(safeProjectId, safeSessionId);
+      }
+
+      // Check cache first
+      let sessionDetail = forceRefresh ? undefined : services.dataCache.get(cacheKey);
+      if (sessionDetail) {
+        return sessionDetail;
+      }
+
+      const fsType = services.projectScanner.getFileSystemProvider().type;
+      // In SSH mode, avoid an extra deep metadata scan before full parse.
+      const session = await services.projectScanner.getSessionWithOptions(
+        safeProjectId,
+        safeSessionId,
+        {
+          metadataLevel: fsType === 'ssh' ? 'light' : 'deep',
+        }
+      );
+      if (!session) {
+        logger.error(`Session not found: ${safeSessionId}`);
+        return null;
+      }
+
+      // Parse session messages
+      const parsedSession = await services.sessionParser.parseSession(safeProjectId, safeSessionId);
+
+      // Resolve subagents
+      const subagents = await services.subagentResolver.resolveSubagents(
+        safeProjectId,
+        safeSessionId,
+        parsedSession.taskCalls,
+        parsedSession.messages
+      );
+      session.hasSubagents = subagents.length > 0;
+
+      // Build session detail with chunks
+      sessionDetail = services.chunkBuilder.buildSessionDetail(
+        session,
+        parsedSession.messages,
+        subagents
+      );
+
+      // Cache the result
+      services.dataCache.set(cacheKey, sessionDetail);
+
+      return sessionDetail;
+    } catch (error) {
+      logger.error(
+        `Error in GET session-detail for ${request.params.projectId}/${request.params.sessionId}:`,
+        error
+      );
+      return null;
     }
-  );
+  });
 
   // Conversation groups
   app.get<{ Params: { projectId: string; sessionId: string } }>(

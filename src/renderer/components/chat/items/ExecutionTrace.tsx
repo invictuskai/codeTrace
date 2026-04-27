@@ -164,7 +164,7 @@ export const ExecutionTrace: React.FC<ExecutionTraceProps> = React.memo(function
               <BaseItem
                 key={itemId}
                 icon={<MailOpen className="size-4" />}
-                label="Input"
+                label="LLM(Input)"
                 summary={truncateText(item.content, 80)}
                 tokenCount={item.tokenCount}
                 onClick={() => handleItemClick(itemId)}
@@ -255,7 +255,7 @@ export const ExecutionTrace: React.FC<ExecutionTraceProps> = React.memo(function
                     }}
                   >
                     <div
-                      className="max-h-64 overflow-y-auto border-l-2 px-3 py-2"
+                      className="overflow-y-auto border-l-2 px-3 py-2"
                       style={{ borderColor: 'var(--chat-ai-border)' }}
                     >
                       <MarkdownViewer content={item.content} copyable />

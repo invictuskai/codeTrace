@@ -10,6 +10,7 @@
  */
 
 import { type ParsedMessage, type Process, type SessionMetrics, type ToolCall } from '@main/types';
+import { isCodexProjectId } from '@main/utils/codexPaths';
 import { calculateMetrics, checkMessagesOngoing, parseJsonlFile } from '@main/utils/jsonl';
 import { createLogger } from '@shared/utils/logger';
 import * as path from 'path';
@@ -41,6 +42,10 @@ export class SubagentResolver {
     taskCalls: ToolCall[],
     messages?: ParsedMessage[]
   ): Promise<Process[]> {
+    if (isCodexProjectId(projectId)) {
+      return this.resolveCodexSubagents(taskCalls, messages ?? []);
+    }
+
     // Get subagent files
     const subagentFiles = await this.projectScanner.listSubagentFiles(projectId, sessionId);
 
@@ -150,6 +155,376 @@ export class SubagentResolver {
 
     // Check if content is exactly "Warmup" (string, not array)
     return firstUserMessage.content === 'Warmup';
+  }
+
+  /**
+   * Codex currently records subagent orchestration as tool calls in the parent
+   * rollout log. Build a structural process tree from spawn_agent calls even
+   * when no child JSONL file is available.
+   */
+  private resolveCodexSubagents(taskCalls: ToolCall[], messages: ParsedMessage[]): Process[] {
+    const spawnCalls = taskCalls.filter((tc) => tc.name === 'spawn_agent');
+    if (spawnCalls.length === 0) {
+      return [];
+    }
+
+    const callMessages = this.mapToolCallMessages(messages);
+    const resultMessages = this.mapToolResultMessages(messages);
+    const subagentsByAgentId = new Map<string, Process>();
+    const subagents: Process[] = [];
+
+    for (const taskCall of spawnCalls) {
+      const callMessage = callMessages.get(taskCall.id);
+      if (!callMessage) {
+        continue;
+      }
+
+      const resultMessage = resultMessages.get(taskCall.id);
+      const resultText = resultMessage ? this.extractToolResultText(resultMessage) : '';
+      const agentId = this.extractCodexAgentId(resultText, taskCall.id);
+      const syntheticMessages = this.buildCodexSubagentMessages(
+        agentId,
+        taskCall,
+        callMessage,
+        resultMessage,
+        resultText
+      );
+      const timing = this.calculateCodexProcessTiming(syntheticMessages, callMessage.timestamp);
+
+      const subagent: Process = {
+        id: agentId,
+        filePath: `codex:${agentId}`,
+        messages: syntheticMessages,
+        startTime: timing.startTime,
+        endTime: timing.endTime,
+        durationMs: timing.durationMs,
+        metrics: calculateMetrics(syntheticMessages),
+        description: taskCall.taskDescription ?? this.extractCodexPrompt(taskCall.input),
+        subagentType: taskCall.taskSubagentType ?? 'Codex',
+        isParallel: false,
+        parentTaskId: taskCall.id,
+        isOngoing: !resultMessage,
+      };
+
+      subagents.push(subagent);
+      subagentsByAgentId.set(agentId, subagent);
+      subagentsByAgentId.set(taskCall.id, subagent);
+    }
+
+    this.attachCodexAgentControlMessages(
+      messages,
+      callMessages,
+      resultMessages,
+      subagentsByAgentId
+    );
+
+    for (const subagent of subagents) {
+      const timing = this.calculateCodexProcessTiming(subagent.messages, subagent.startTime);
+      subagent.startTime = timing.startTime;
+      subagent.endTime = timing.endTime;
+      subagent.durationMs = timing.durationMs;
+      subagent.metrics = calculateMetrics(subagent.messages);
+    }
+
+    this.detectParallelExecution(subagents);
+    subagents.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    return subagents;
+  }
+
+  private attachCodexAgentControlMessages(
+    messages: ParsedMessage[],
+    callMessages: Map<string, ParsedMessage>,
+    resultMessages: Map<string, ParsedMessage>,
+    subagentsByAgentId: Map<string, Process>
+  ): void {
+    for (const message of messages) {
+      for (const toolCall of message.toolCalls) {
+        if (
+          toolCall.name === 'spawn_agent' ||
+          !['send_input', 'wait_agent', 'resume_agent', 'close_agent'].includes(toolCall.name)
+        ) {
+          continue;
+        }
+
+        const resultMessage = resultMessages.get(toolCall.id);
+        const resultText = resultMessage ? this.extractToolResultText(resultMessage) : '';
+        const targets = this.extractCodexAgentTargets(toolCall.input, resultText);
+
+        for (const target of targets) {
+          const subagent = subagentsByAgentId.get(target);
+          if (!subagent) {
+            continue;
+          }
+
+          if (toolCall.name === 'send_input') {
+            const prompt = this.extractCodexPrompt(toolCall.input);
+            if (prompt) {
+              this.appendCodexSubagentMessage(subagent, {
+                kind: 'input',
+                type: 'user',
+                timestamp: callMessages.get(toolCall.id)?.timestamp ?? message.timestamp,
+                content: prompt,
+                cwd: message.cwd,
+              });
+            }
+          }
+
+          if (resultText && !this.isCodexAgentHandleResult(resultText, subagent.id)) {
+            this.appendCodexSubagentMessage(subagent, {
+              kind: toolCall.name,
+              type: 'assistant',
+              timestamp: resultMessage?.timestamp ?? message.timestamp,
+              content: resultText,
+              cwd: resultMessage?.cwd ?? message.cwd,
+            });
+          }
+
+          if (toolCall.name === 'close_agent' && resultMessage) {
+            subagent.isOngoing = false;
+          }
+        }
+      }
+    }
+  }
+
+  private buildCodexSubagentMessages(
+    agentId: string,
+    taskCall: ToolCall,
+    callMessage: ParsedMessage,
+    resultMessage: ParsedMessage | undefined,
+    resultText: string
+  ): ParsedMessage[] {
+    const prompt = this.extractCodexPrompt(taskCall.input);
+    const synthetic: ParsedMessage[] = [];
+
+    if (prompt) {
+      synthetic.push({
+        uuid: `codex-subagent-${agentId}-input`,
+        parentUuid: callMessage.uuid,
+        type: 'user',
+        timestamp: callMessage.timestamp,
+        role: 'user',
+        content: prompt,
+        cwd: callMessage.cwd,
+        agentId,
+        isSidechain: true,
+        isMeta: false,
+        userType: 'external',
+        toolCalls: [],
+        toolResults: [],
+      });
+    }
+
+    if (resultMessage && resultText && !this.isCodexAgentHandleResult(resultText, agentId)) {
+      synthetic.push({
+        uuid: `codex-subagent-${agentId}-result`,
+        parentUuid: synthetic[0]?.uuid ?? callMessage.uuid,
+        type: 'assistant',
+        timestamp: resultMessage.timestamp,
+        role: 'assistant',
+        content: [{ type: 'text', text: resultText }],
+        cwd: resultMessage.cwd ?? callMessage.cwd,
+        agentId,
+        isSidechain: true,
+        isMeta: false,
+        toolCalls: [],
+        toolResults: [],
+      });
+    }
+
+    return synthetic;
+  }
+
+  private appendCodexSubagentMessage(
+    subagent: Process,
+    message: {
+      kind: string;
+      type: 'user' | 'assistant';
+      timestamp: Date;
+      content: string;
+      cwd?: string;
+    }
+  ): void {
+    const previous = subagent.messages[subagent.messages.length - 1];
+    subagent.messages.push({
+      uuid: `codex-subagent-${this.safeCodexId(subagent.id)}-${message.kind}-${subagent.messages.length + 1}`,
+      parentUuid: previous?.uuid ?? null,
+      type: message.type,
+      timestamp: message.timestamp,
+      role: message.type === 'user' ? 'user' : 'assistant',
+      content:
+        message.type === 'assistant' ? [{ type: 'text', text: message.content }] : message.content,
+      cwd: message.cwd,
+      agentId: subagent.id,
+      isSidechain: true,
+      isMeta: false,
+      userType: message.type === 'user' ? 'external' : undefined,
+      toolCalls: [],
+      toolResults: [],
+    });
+  }
+
+  private mapToolCallMessages(messages: ParsedMessage[]): Map<string, ParsedMessage> {
+    const mapped = new Map<string, ParsedMessage>();
+    for (const message of messages) {
+      for (const toolCall of message.toolCalls) {
+        mapped.set(toolCall.id, message);
+      }
+    }
+    return mapped;
+  }
+
+  private mapToolResultMessages(messages: ParsedMessage[]): Map<string, ParsedMessage> {
+    const mapped = new Map<string, ParsedMessage>();
+    for (const message of messages) {
+      if (message.sourceToolUseID) {
+        mapped.set(message.sourceToolUseID, message);
+      }
+      for (const result of message.toolResults) {
+        mapped.set(result.toolUseId, message);
+      }
+    }
+    return mapped;
+  }
+
+  private extractCodexAgentTargets(input: Record<string, unknown>, resultText: string): string[] {
+    const targets = new Set<string>();
+    for (const key of ['target', 'id', 'agent_id', 'agentId']) {
+      const value = this.getString(input[key]);
+      if (value) {
+        targets.add(value);
+      }
+    }
+
+    const targetList = input.targets;
+    if (Array.isArray(targetList)) {
+      for (const target of targetList) {
+        if (typeof target === 'string') {
+          targets.add(target);
+        }
+      }
+    }
+
+    const resultAgentId = resultText ? this.extractCodexAgentId(resultText, '') : '';
+    if (resultAgentId) {
+      targets.add(resultAgentId);
+    }
+
+    return [...targets];
+  }
+
+  private calculateCodexProcessTiming(
+    messages: ParsedMessage[],
+    fallbackTime: Date
+  ): {
+    startTime: Date;
+    endTime: Date;
+    durationMs: number;
+  } {
+    if (messages.length === 0) {
+      return { startTime: fallbackTime, endTime: fallbackTime, durationMs: 0 };
+    }
+
+    return this.calculateTiming(messages);
+  }
+
+  private isCodexAgentHandleResult(output: string, agentId: string): boolean {
+    const trimmed = output.trim();
+    if (!trimmed) {
+      return true;
+    }
+
+    if (trimmed === agentId) {
+      return true;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      const record = this.asRecord(parsed);
+      if (!record) {
+        return false;
+      }
+
+      const keys = Object.keys(record);
+      const handleKeys = new Set(['agent_id', 'agentId', 'id', 'status']);
+      const hasAgentId =
+        this.getString(record.agent_id) === agentId ||
+        this.getString(record.agentId) === agentId ||
+        this.getString(record.id) === agentId;
+      return hasAgentId && keys.every((key) => handleKeys.has(key));
+    } catch {
+      return false;
+    }
+  }
+
+  private safeCodexId(id: string): string {
+    return id.replace(/[^a-zA-Z0-9._-]/g, '-');
+  }
+
+  private extractCodexPrompt(input: Record<string, unknown>): string | undefined {
+    const direct =
+      this.getString(input.message) ?? this.getString(input.prompt) ?? this.getString(input.task);
+    if (direct) {
+      return direct;
+    }
+
+    if (Array.isArray(input.items)) {
+      const parts: string[] = [];
+      for (const item of input.items) {
+        const record = this.asRecord(item);
+        const text = record ? this.getString(record.text) : undefined;
+        if (text) {
+          parts.push(text);
+        }
+      }
+      if (parts.length > 0) {
+        return parts.join('\n\n');
+      }
+    }
+
+    return undefined;
+  }
+
+  private extractToolResultText(message: ParsedMessage): string {
+    const firstResult = message.toolResults[0];
+    if (firstResult) {
+      return typeof firstResult.content === 'string'
+        ? firstResult.content
+        : JSON.stringify(firstResult.content);
+    }
+
+    const content = message.toolUseResult?.content;
+    return typeof content === 'string' ? content : '';
+  }
+
+  private extractCodexAgentId(output: string, fallbackId: string): string {
+    try {
+      const parsed = JSON.parse(output) as unknown;
+      const record = this.asRecord(parsed);
+      const id =
+        record &&
+        (this.getString(record.agent_id) ??
+          this.getString(record.agentId) ??
+          this.getString(record.id));
+      if (id) {
+        return id;
+      }
+    } catch {
+      // Non-JSON tool output is common.
+    }
+
+    const match = /\b(?:agent[_\s-]?id|id)["'\s:=]+([a-z0-9._-]+)/i.exec(output);
+    return match?.[1] ?? fallbackId;
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | undefined {
+    return typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : undefined;
+  }
+
+  private getString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
   }
 
   /**

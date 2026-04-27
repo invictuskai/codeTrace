@@ -287,7 +287,7 @@ export function useSettingsHandlers({
           theme: 'dark',
           defaultTab: 'dashboard',
           claudeRootPath: null,
-          autoExpandAIGroups: false,
+          autoExpandAIGroups: true,
           useNativeTitleBar: false,
         },
         display: {
@@ -321,7 +321,7 @@ export function useSettingsHandlers({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'claude-devtools-config.json';
+    link.download = 'codetrace-config.json';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

@@ -7,7 +7,7 @@ import { useStore } from '../store';
 type Theme = 'dark' | 'light' | 'system';
 type ResolvedTheme = 'dark' | 'light';
 
-const THEME_CACHE_KEY = 'claude-devtools-theme-cache';
+const THEME_CACHE_KEY = 'codetrace-theme-cache';
 
 /**
  * Hook to manage theme state and application.

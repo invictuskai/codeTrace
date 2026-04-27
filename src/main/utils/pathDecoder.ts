@@ -1,6 +1,8 @@
 import * as os from 'os';
 import * as path from 'path';
 
+import { isCodexProjectId } from './codexPaths';
+
 /**
  * Utility functions for encoding/decoding Claude Code project directory names.
  *
@@ -102,11 +104,15 @@ export function translateWslMountPath(posixPath: string): string {
   if (process.platform !== 'win32') {
     return posixPath;
   }
-  const match = /^\/mnt\/([a-zA-Z])(\/.*)?$/.exec(posixPath);
-  if (match) {
-    const drive = match[1].toUpperCase();
-    const rest = match[2] ?? '';
-    return `${drive}:${rest}`;
+  const drivePrefix = '/mnt/';
+  const drive = posixPath.charAt(drivePrefix.length);
+  const rest = posixPath.slice(drivePrefix.length + 1);
+  if (
+    posixPath.startsWith(drivePrefix) &&
+    /^[a-zA-Z]$/.test(drive) &&
+    (rest === '' || rest.startsWith('/'))
+  ) {
+    return `${drive.toUpperCase()}:${rest}`;
   }
   return posixPath;
 }
@@ -169,6 +175,10 @@ export function isValidEncodedPath(encodedName: string): boolean {
 export function isValidProjectId(projectId: string): boolean {
   if (!projectId) {
     return false;
+  }
+
+  if (isCodexProjectId(projectId)) {
+    return true;
   }
 
   const sep = projectId.indexOf('::');

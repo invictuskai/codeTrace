@@ -128,31 +128,36 @@ describe('tabUISlice', () => {
   });
 
   describe('Display item expansion - per-tab isolation', () => {
+    // NOTE: Display items default to *collapsed*. The slice tracks a per-AI-group
+    // set of items the user (or navigation/search) has explicitly expanded.
+
     it('should toggle display item expansion within AI group', () => {
       store.getState().initTabUIState('tab-1');
 
+      // No expansions recorded yet — item is collapsed by default.
       const items = store.getState().getExpandedDisplayItemIdsForTab('tab-1', 'group-1');
       expect(items.size).toBe(0);
 
+      // First toggle from default-collapsed → expanded.
       store.getState().toggleDisplayItemExpansionForTab('tab-1', 'group-1', 'item-1');
 
-      const updatedItems = store.getState().getExpandedDisplayItemIdsForTab('tab-1', 'group-1');
-      expect(updatedItems.has('item-1')).toBe(true);
+      const expanded = store.getState().getExpandedDisplayItemIdsForTab('tab-1', 'group-1');
+      expect(expanded.has('item-1')).toBe(true);
 
+      // Second toggle collapses (removes from expanded set).
       store.getState().toggleDisplayItemExpansionForTab('tab-1', 'group-1', 'item-1');
 
-      const finalItems = store.getState().getExpandedDisplayItemIdsForTab('tab-1', 'group-1');
-      expect(finalItems.has('item-1')).toBe(false);
+      const final = store.getState().getExpandedDisplayItemIdsForTab('tab-1', 'group-1');
+      expect(final.has('item-1')).toBe(false);
     });
 
     it('should isolate display item expansion between tabs', () => {
       store.getState().initTabUIState('tab-1');
       store.getState().initTabUIState('tab-2');
 
-      // Expand item in tab-1
+      // Expand item-1 in tab-1 only.
       store.getState().toggleDisplayItemExpansionForTab('tab-1', 'group-1', 'item-1');
 
-      // tab-1 should have it, tab-2 should not
       expect(
         store.getState().getExpandedDisplayItemIdsForTab('tab-1', 'group-1').has('item-1')
       ).toBe(true);
@@ -164,6 +169,7 @@ describe('tabUISlice', () => {
     it('should isolate display items by AI group within same tab', () => {
       store.getState().initTabUIState('tab-1');
 
+      // Expand different items in different groups.
       store.getState().toggleDisplayItemExpansionForTab('tab-1', 'group-1', 'item-1');
       store.getState().toggleDisplayItemExpansionForTab('tab-1', 'group-2', 'item-2');
 
@@ -181,15 +187,20 @@ describe('tabUISlice', () => {
       ).toBe(true);
     });
 
-    it('should expand display item programmatically', () => {
+    it('should force-expand a collapsed display item', () => {
       store.getState().initTabUIState('tab-1');
+
+      // Item is collapsed by default — expandDisplayItemForTab should add it.
+      expect(
+        store.getState().getExpandedDisplayItemIdsForTab('tab-1', 'group-1').has('item-1')
+      ).toBe(false);
 
       store.getState().expandDisplayItemForTab('tab-1', 'group-1', 'item-1');
       expect(
         store.getState().getExpandedDisplayItemIdsForTab('tab-1', 'group-1').has('item-1')
       ).toBe(true);
 
-      // Calling expand again should not change state (idempotent)
+      // Already expanded — calling again is a no-op.
       store.getState().expandDisplayItemForTab('tab-1', 'group-1', 'item-1');
       expect(
         store.getState().getExpandedDisplayItemIdsForTab('tab-1', 'group-1').has('item-1')

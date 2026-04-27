@@ -1,5 +1,5 @@
 /**
- * Standalone (non-Electron) entry point for claude-devtools.
+ * Standalone (non-Electron) entry point for codeTrace.
  *
  * Runs the HTTP server + API without Electron, suitable for Docker
  * or any headless/remote environment. The renderer is served as
@@ -21,11 +21,17 @@ import {
   getTodosBasePath,
   setClaudeBasePathOverride,
 } from './utils/pathDecoder';
-import { ConfigManager, LocalFileSystemProvider, NotificationManager, ServiceContext } from './services';
+import {
+  CODETRACE_CONFIG_FILENAME,
+  ConfigManager,
+  LEGACY_CONFIG_FILENAME,
+  LocalFileSystemProvider,
+  NotificationManager,
+  ServiceContext,
+} from './services';
 
 import type { HttpServices } from './http';
 import type { SshConnectionManager } from './services/infrastructure/SshConnectionManager';
-import type { UpdaterService } from './services/infrastructure/UpdaterService';
 
 const logger = createLogger('Standalone');
 
@@ -45,14 +51,6 @@ if (!process.env.CORS_ORIGIN) {
 // =============================================================================
 // Stub services (Electron-only features unavailable in standalone)
 // =============================================================================
-
-/** No-op UpdaterService stub — auto-updater requires Electron. */
-const updaterServiceStub = {
-  checkForUpdates: async () => {},
-  downloadUpdate: async () => {},
-  quitAndInstall: () => {},
-  setMainWindow: () => {},
-} as unknown as UpdaterService;
 
 /** No-op SshConnectionManager stub — SSH is managed per-user in the Electron app. */
 const sshConnectionManagerStub = {
@@ -92,11 +90,11 @@ async function start(): Promise<void> {
 
   // Load config from disk before anything else uses it.
   // When CLAUDE_ROOT is set (e.g. Docker), config lives there rather than ~/.claude.
-  const configPath = CLAUDE_ROOT
-    ? path.join(CLAUDE_ROOT, 'claude-devtools-config.json')
+  const configPath = CLAUDE_ROOT ? path.join(CLAUDE_ROOT, CODETRACE_CONFIG_FILENAME) : undefined;
+  const legacyConfigPath = CLAUDE_ROOT
+    ? path.join(CLAUDE_ROOT, LEGACY_CONFIG_FILENAME)
     : undefined;
-  await ConfigManager.initializeInstance(configPath);
-
+  await ConfigManager.initializeInstance(configPath, legacyConfigPath);
 
   // Apply Claude root override if set
   if (CLAUDE_ROOT) {
@@ -153,7 +151,6 @@ async function start(): Promise<void> {
     subagentResolver: localContext.subagentResolver,
     chunkBuilder: localContext.chunkBuilder,
     dataCache: localContext.dataCache,
-    updaterService: updaterServiceStub,
     sshConnectionManager: sshConnectionManagerStub,
   };
 

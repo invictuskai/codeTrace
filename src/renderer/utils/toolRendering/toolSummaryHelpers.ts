@@ -14,11 +14,126 @@ function truncate(str: string, maxLength: number): string {
   return str.slice(0, maxLength) + '...';
 }
 
+function extractApplyPatchPaths(patch: string): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  const fileLinePattern = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/;
+
+  for (const line of patch.split('\n')) {
+    const match = fileLinePattern.exec(line.trim());
+    const filePath = match?.[1];
+    if (filePath && !seen.has(filePath)) {
+      seen.add(filePath);
+      paths.push(filePath);
+    }
+  }
+
+  return paths;
+}
+
 /**
  * Generates a human-readable summary for a tool call.
  */
 export function getToolSummary(toolName: string, input: Record<string, unknown>): string {
   switch (toolName) {
+    case 'apply_patch': {
+      const patch = input.patch as string | undefined;
+      if (!patch) return 'apply_patch';
+
+      const paths = extractApplyPatchPaths(patch);
+      if (paths.length === 1) {
+        return `Patch ${getBaseName(paths[0])}`;
+      }
+      if (paths.length > 1) {
+        return `Patch ${paths.length} files`;
+      }
+
+      return 'apply_patch';
+    }
+
+    // =========================================================================
+    // Codex Tools
+    // =========================================================================
+
+    case 'shell_command': {
+      const command = input.command as string | undefined;
+      if (command) {
+        return truncate(command, 60);
+      }
+      return 'shell_command';
+    }
+
+    case 'update_plan': {
+      const plan = input.plan;
+      if (Array.isArray(plan) && plan.length > 0) {
+        const inProgress = plan.find(
+          (item): item is { step?: string; status?: string } =>
+            typeof item === 'object' &&
+            item !== null &&
+            (item as { status?: string }).status === 'in_progress'
+        );
+        const stepText = inProgress?.step;
+        const total = plan.length;
+        if (typeof stepText === 'string' && stepText.length > 0) {
+          return `${truncate(stepText, 40)} (${total} steps)`;
+        }
+        return `${total} step${total !== 1 ? 's' : ''}`;
+      }
+      return 'update_plan';
+    }
+
+    case 'web_search': {
+      const query = input.query as string | undefined;
+      const queries = input.queries;
+      const action = input.action as Record<string, unknown> | undefined;
+      const actionQuery = typeof action?.query === 'string' ? action.query : undefined;
+      const primary =
+        query ??
+        actionQuery ??
+        (Array.isArray(queries) && typeof queries[0] === 'string' ? queries[0] : undefined);
+      if (primary) {
+        const extra =
+          Array.isArray(queries) && queries.length > 1 ? ` (+${queries.length - 1})` : '';
+        return `"${truncate(primary, 40)}"${extra}`;
+      }
+      return 'web_search';
+    }
+
+    case 'view_image': {
+      const path = input.path as string | undefined;
+      if (path) {
+        return getBaseName(path) || truncate(path, 50);
+      }
+      return 'view_image';
+    }
+
+    case 'spawn_agent': {
+      const agentType =
+        (input.agent_type as string | undefined) ?? (input.model as string | undefined);
+      const prompt =
+        (input.prompt as string | undefined) ??
+        (input.task as string | undefined) ??
+        (input.message as string | undefined);
+      const typeStr = agentType ? `${agentType} - ` : '';
+      if (prompt) return `${typeStr}${truncate(prompt, 40)}`;
+      return agentType ?? 'spawn_agent';
+    }
+
+    case 'wait_agent':
+    case 'resume_agent':
+    case 'close_agent': {
+      const agentId = (input.agent_id as string | undefined) ?? (input.id as string | undefined);
+      return agentId ? `${toolName} ${truncate(agentId, 30)}` : toolName;
+    }
+
+    case 'send_input': {
+      const agentId = (input.agent_id as string | undefined) ?? (input.id as string | undefined);
+      const message = (input.message as string | undefined) ?? (input.input as string | undefined);
+      if (agentId && message) return `-> ${truncate(agentId, 20)}: ${truncate(message, 30)}`;
+      if (message) return truncate(message, 50);
+      return agentId ? `-> ${agentId}` : 'send_input';
+    }
+
     case 'Edit': {
       const filePath = input.file_path as string | undefined;
       const oldString = input.old_string as string | undefined;

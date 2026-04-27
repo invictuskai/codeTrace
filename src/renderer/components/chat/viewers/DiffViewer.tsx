@@ -290,7 +290,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   fileName,
   oldString,
   newString,
-  maxHeight = 'max-h-96',
+  maxHeight = '',
   tokenCount,
 }): React.JSX.Element => {
   // Compute diff

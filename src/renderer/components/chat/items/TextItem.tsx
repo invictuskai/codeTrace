@@ -41,7 +41,7 @@ export const TextItem: React.FC<TextItemProps> = React.memo(function TextItem({
   return (
     <BaseItem
       icon={<MessageSquare className="size-4" />}
-      label="Output"
+      label="LLM(Output)"
       summary={truncatedPreview}
       tokenCount={tokenCount}
       onClick={onClick}
@@ -50,7 +50,7 @@ export const TextItem: React.FC<TextItemProps> = React.memo(function TextItem({
       highlightStyle={highlightStyle}
       notificationDotColor={notificationDotColor}
     >
-      <MarkdownViewer content={fullContent} maxHeight="max-h-96" />
+      <MarkdownViewer content={fullContent} />
     </BaseItem>
   );
 });

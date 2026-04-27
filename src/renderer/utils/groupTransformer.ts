@@ -395,14 +395,19 @@ function extractUserGroupContent(message: ParsedMessage): UserGroupContent {
   const images: ImageData[] = [];
   const fileReferences: FileReference[] = [];
 
-  // Extract text from content
-  // Note: Image handling not yet implemented - images are not part of ContentBlock type
+  // Extract text and images from content
   if (typeof message.content === 'string') {
     rawText = message.content;
   } else if (Array.isArray(message.content)) {
     for (const block of message.content) {
       if (block.type === 'text' && block.text) {
         rawText += block.text;
+      } else if (block.type === 'image') {
+        images.push({
+          id: `${message.uuid}-image-${images.length}`,
+          mediaType: block.source.media_type,
+          data: block.source.data,
+        });
       }
     }
   }

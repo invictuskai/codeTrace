@@ -11,12 +11,14 @@
  */
 
 import { type FileChangeEvent, type ParsedMessage } from '@main/types';
+import { buildCodexProjectId, extractCodexSessionIdFromFilename } from '@main/utils/codexPaths';
 import { parseJsonlFile, parseJsonlLine } from '@main/utils/jsonl';
 import { getProjectsBasePath, getTodosBasePath } from '@main/utils/pathDecoder';
 import { createLogger } from '@shared/utils/logger';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as readline from 'readline';
 
 import { projectPathResolver } from '../discovery/ProjectPathResolver';
 import { type ProjectScanner } from '../discovery/ProjectScanner';
@@ -50,14 +52,23 @@ interface ActiveSessionFile {
   projectId: string;
   sessionId: string;
   subagentId?: string;
+  provider?: 'claude' | 'codex';
+}
+
+interface CodexSessionFileInfo {
+  projectId: string;
+  sessionId: string;
+  cwd: string;
 }
 
 export class FileWatcher extends EventEmitter {
   private projectsWatcher: fs.FSWatcher | null = null;
   private todosWatcher: fs.FSWatcher | null = null;
+  private codexSessionsWatcher: fs.FSWatcher | null = null;
   private retryTimer: NodeJS.Timeout | null = null;
   private projectsPath: string;
   private todosPath: string;
+  private codexSessionsPath: string | null;
   private dataCache: DataCache;
   private fsProvider: FileSystemProvider;
   private notificationManager: NotificationManager | null = null;
@@ -93,11 +104,13 @@ export class FileWatcher extends EventEmitter {
     dataCache: DataCache,
     projectsPath?: string,
     todosPath?: string,
-    fsProvider?: FileSystemProvider
+    fsProvider?: FileSystemProvider,
+    codexSessionsPath?: string | null
   ) {
     super();
     this.projectsPath = projectsPath ?? getProjectsBasePath();
     this.todosPath = todosPath ?? getTodosBasePath();
+    this.codexSessionsPath = codexSessionsPath === undefined ? null : (codexSessionsPath ?? null);
     this.dataCache = dataCache;
     this.fsProvider = fsProvider ?? new LocalFileSystemProvider();
   }
@@ -173,6 +186,11 @@ export class FileWatcher extends EventEmitter {
     if (this.todosWatcher) {
       this.todosWatcher.close();
       this.todosWatcher = null;
+    }
+
+    if (this.codexSessionsWatcher) {
+      this.codexSessionsWatcher.close();
+      this.codexSessionsWatcher = null;
     }
 
     // Clear any pending debounce timers
@@ -329,6 +347,39 @@ export class FileWatcher extends EventEmitter {
     }
   }
 
+  /**
+   * Starts the Codex sessions watcher.
+   */
+  private startCodexSessionsWatcher(): void {
+    if (this.codexSessionsWatcher || !this.codexSessionsPath || this.fsProvider.type !== 'local') {
+      return;
+    }
+
+    try {
+      if (!fs.existsSync(this.codexSessionsPath)) {
+        this.scheduleWatcherRetry();
+        return;
+      }
+
+      this.codexSessionsWatcher = fs.watch(
+        this.codexSessionsPath,
+        { recursive: true },
+        (eventType, filename) => {
+          if (filename) {
+            this.handleCodexSessionsChange(eventType, filename);
+          }
+        }
+      );
+      this.attachWatcherRecovery(this.codexSessionsWatcher, 'codex');
+
+      logger.info(`FileWatcher: Started watching Codex sessions at ${this.codexSessionsPath}`);
+    } catch (error) {
+      logger.error('Error starting Codex sessions watcher:', error);
+      this.codexSessionsWatcher = null;
+      this.scheduleWatcherRetry();
+    }
+  }
+
   private ensureWatchers(): void {
     if (!this.isWatching || this.fsProvider.type === 'ssh') {
       return;
@@ -336,8 +387,13 @@ export class FileWatcher extends EventEmitter {
 
     this.startProjectsWatcher();
     this.startTodosWatcher();
+    this.startCodexSessionsWatcher();
 
-    if (!this.projectsWatcher || !this.todosWatcher) {
+    if (
+      !this.projectsWatcher ||
+      !this.todosWatcher ||
+      (this.codexSessionsPath && !this.codexSessionsWatcher)
+    ) {
       this.scheduleWatcherRetry();
     }
   }
@@ -353,13 +409,18 @@ export class FileWatcher extends EventEmitter {
     }, WATCHER_RETRY_MS);
   }
 
-  private attachWatcherRecovery(watcher: fs.FSWatcher, watcherType: 'projects' | 'todos'): void {
+  private attachWatcherRecovery(
+    watcher: fs.FSWatcher,
+    watcherType: 'projects' | 'todos' | 'codex'
+  ): void {
     watcher.on('error', (error) => {
       logger.error(`FileWatcher: ${watcherType} watcher error:`, error);
       if (watcherType === 'projects') {
         this.projectsWatcher = null;
-      } else {
+      } else if (watcherType === 'todos') {
         this.todosWatcher = null;
+      } else {
+        this.codexSessionsWatcher = null;
       }
       this.scheduleWatcherRetry();
     });
@@ -370,8 +431,10 @@ export class FileWatcher extends EventEmitter {
       }
       if (watcherType === 'projects') {
         this.projectsWatcher = null;
-      } else {
+      } else if (watcherType === 'todos') {
         this.todosWatcher = null;
+      } else {
+        this.codexSessionsWatcher = null;
       }
       this.scheduleWatcherRetry();
     });
@@ -502,6 +565,23 @@ export class FileWatcher extends EventEmitter {
   }
 
   /**
+   * Handles file change events in the Codex sessions directory.
+   */
+  private handleCodexSessionsChange(eventType: string, filename: string): void {
+    try {
+      if (!filename.endsWith('.jsonl')) {
+        return;
+      }
+
+      this.debounce(`codex/${filename}`, () =>
+        this.processCodexSessionsChange(eventType, filename)
+      );
+    } catch (error) {
+      logger.error('Error handling Codex sessions change:', error);
+    }
+  }
+
+  /**
    * Process a debounced projects change.
    */
   private async processProjectsChange(eventType: string, filename: string): Promise<void> {
@@ -575,7 +655,12 @@ export class FileWatcher extends EventEmitter {
           if (config.notifications.includeSubagentErrors) {
             const subagentFilename = path.basename(parts[3], '.jsonl');
             const subagentId = subagentFilename.replace(/^agent-/, '');
-            this.activeSessionFiles.set(fullPath, { projectId, sessionId, subagentId });
+            this.activeSessionFiles.set(fullPath, {
+              projectId,
+              sessionId,
+              subagentId,
+              provider: 'claude',
+            });
             this.detectErrorsInSessionFile(projectId, sessionId, fullPath, subagentId).catch(
               (err) => {
                 logger.error('Error detecting errors in subagent file:', err);
@@ -583,13 +668,72 @@ export class FileWatcher extends EventEmitter {
             );
           }
         } else {
-          this.activeSessionFiles.set(fullPath, { projectId, sessionId });
+          this.activeSessionFiles.set(fullPath, { projectId, sessionId, provider: 'claude' });
           this.detectErrorsInSessionFile(projectId, sessionId, fullPath).catch((err) => {
             logger.error('Error detecting errors in session file:', err);
           });
         }
       }
     }
+  }
+
+  /**
+   * Process a debounced Codex session change.
+   */
+  private async processCodexSessionsChange(eventType: string, filename: string): Promise<void> {
+    if (!this.codexSessionsPath) {
+      return;
+    }
+
+    const fullPath = path.isAbsolute(filename)
+      ? path.normalize(filename)
+      : path.join(this.codexSessionsPath, filename);
+    const relativePath = path.relative(this.codexSessionsPath, fullPath);
+
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+      return;
+    }
+
+    const fileExists = await this.fsProvider.exists(fullPath);
+    const changeType: FileChangeEvent['type'] =
+      eventType === 'rename' ? (fileExists ? 'add' : 'unlink') : 'change';
+
+    const knownInfo = this.activeSessionFiles.get(fullPath);
+    const parsedInfo = fileExists ? await this.readCodexSessionFileInfo(fullPath) : null;
+    const sessionId =
+      parsedInfo?.sessionId ?? knownInfo?.sessionId ?? extractCodexSessionIdFromFilename(fullPath);
+    const projectId = parsedInfo?.projectId ?? knownInfo?.projectId;
+
+    if (projectId) {
+      this.dataCache.invalidateSession(projectId, sessionId);
+      this.projectScanner?.invalidateCachesForProject(projectId);
+      if (changeType === 'unlink') {
+        this.clearErrorTracking(fullPath);
+      } else {
+        this.activeSessionFiles.set(fullPath, {
+          projectId,
+          sessionId,
+          provider: 'codex',
+        });
+        try {
+          const stats = await this.fsProvider.stat(fullPath);
+          this.lastProcessedSize.set(fullPath, stats.size);
+        } catch {
+          // Best-effort only; the next change event will refresh the view.
+        }
+      }
+    }
+
+    const event: FileChangeEvent = {
+      type: changeType,
+      path: fullPath,
+      projectId,
+      sessionId,
+      isSubagent: false,
+    };
+
+    this.emit('file-change', event);
+    logger.info(`FileWatcher: ${changeType} Codex session - ${relativePath}`);
   }
 
   // ===========================================================================
@@ -776,6 +920,70 @@ export class FileWatcher extends EventEmitter {
   }
 
   /**
+   * Reads just enough of a Codex rollout file to identify its session and cwd.
+   * The cwd is needed to derive the synthetic Codex project ID used elsewhere.
+   */
+  private async readCodexSessionFileInfo(filePath: string): Promise<CodexSessionFileInfo | null> {
+    if (!(await this.fsProvider.exists(filePath))) {
+      return null;
+    }
+
+    let sessionId = extractCodexSessionIdFromFilename(filePath);
+    let cwd: string | null = null;
+    const maxLinesToInspect = 200;
+    let linesInspected = 0;
+
+    const rl = readline.createInterface({
+      input: this.fsProvider.createReadStream(filePath, { encoding: 'utf8' }),
+      crlfDelay: Infinity,
+    });
+
+    try {
+      for await (const line of rl) {
+        if (++linesInspected > maxLinesToInspect) {
+          break;
+        }
+        if (!line.trim()) {
+          continue;
+        }
+
+        let record: unknown;
+        try {
+          record = JSON.parse(line) as unknown;
+        } catch {
+          continue;
+        }
+
+        const parsed = this.asRecord(record);
+        const payload = this.asRecord(parsed?.payload);
+        const type = this.getString(parsed?.type);
+        if (!payload) {
+          continue;
+        }
+
+        if (type === 'session_meta') {
+          sessionId = this.getString(payload.id) ?? sessionId;
+          cwd = this.getString(payload.cwd) ?? cwd;
+        } else if (type === 'turn_context') {
+          cwd = this.getString(payload.cwd) ?? cwd;
+        }
+
+        if (cwd) {
+          return {
+            projectId: buildCodexProjectId(cwd),
+            sessionId,
+            cwd,
+          };
+        }
+      }
+    } finally {
+      rl.close();
+    }
+
+    return null;
+  }
+
+  /**
    * Handles file change events in the todos directory.
    */
   private handleTodosChange(eventType: string, filename: string): void {
@@ -860,6 +1068,7 @@ export class FileWatcher extends EventEmitter {
               this.activeSessionFiles.set(fullPath, {
                 projectId: dir.name,
                 sessionId,
+                provider: 'claude',
               });
             }
           } catch {
@@ -869,9 +1078,7 @@ export class FileWatcher extends EventEmitter {
       }
 
       if (this.activeSessionFiles.size > 0) {
-        logger.info(
-          `FileWatcher: Seeded ${this.activeSessionFiles.size} active session files`
-        );
+        logger.info(`FileWatcher: Seeded ${this.activeSessionFiles.size} active session files`);
       }
     } catch (err) {
       logger.error('Error seeding active session files:', err);
@@ -904,7 +1111,7 @@ export class FileWatcher extends EventEmitter {
    * Only checks files modified within the last hour.
    */
   private async runCatchUpScan(): Promise<void> {
-    if (!this.notificationManager || this.activeSessionFiles.size === 0) {
+    if (this.activeSessionFiles.size === 0) {
       return;
     }
 
@@ -923,6 +1130,13 @@ export class FileWatcher extends EventEmitter {
         const lastSize = this.lastProcessedSize.get(filePath) ?? 0;
         if (stats.size > lastSize) {
           logger.info(`FileWatcher: Catch-up scan detected growth in ${filePath}`);
+          if (info.provider === 'codex') {
+            await this.processCodexSessionsChange('change', filePath);
+            continue;
+          }
+          if (!this.notificationManager) {
+            continue;
+          }
           await this.detectErrorsInSessionFile(
             info.projectId,
             info.sessionId,
@@ -965,6 +1179,16 @@ export class FileWatcher extends EventEmitter {
     this.debounceTimers.set(key, timer);
   }
 
+  private asRecord(value: unknown): Record<string, unknown> | undefined {
+    return typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : undefined;
+  }
+
+  private getString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+  }
+
   // ===========================================================================
   // Status
   // ===========================================================================
@@ -979,10 +1203,11 @@ export class FileWatcher extends EventEmitter {
   /**
    * Returns watched paths.
    */
-  getWatchedPaths(): { projects: string; todos: string } {
+  getWatchedPaths(): { projects: string; todos: string; codexSessions?: string } {
     return {
       projects: this.projectsPath,
       todos: this.todosPath,
+      codexSessions: this.codexSessionsPath ?? undefined,
     };
   }
 }

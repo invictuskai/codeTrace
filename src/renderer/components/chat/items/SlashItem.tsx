@@ -59,12 +59,7 @@ export const SlashItem: React.FC<SlashItemProps> = ({
       notificationDotColor={notificationDotColor}
     >
       {hasInstructions && (
-        <MarkdownViewer
-          content={slash.instructions!}
-          label="Slash Output"
-          maxHeight="max-h-96"
-          copyable
-        />
+        <MarkdownViewer content={slash.instructions!} label="Slash Output" copyable />
       )}
     </BaseItem>
   );

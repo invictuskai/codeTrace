@@ -163,8 +163,7 @@ export function buildDisplayItems(
         if (linkedTool) {
           // Skip Task tool calls that have associated subagents
           // The subagent will be shown separately, so showing the Task call is redundant
-          const isTaskWithSubagent =
-            linkedTool.name === 'Task' && taskIdsWithSubagents.has(step.id);
+          const isTaskWithSubagent = taskIdsWithSubagents.has(step.id);
           if (!isTaskWithSubagent) {
             displayItems.push({
               type: 'tool',
@@ -425,8 +424,7 @@ export function buildDisplayItemsFromMessages(
       }
       // Only treat as subagent input if there are NO tool_result blocks in this message
       const hasToolResults =
-        Array.isArray(msg.content) &&
-        msg.content.some((b) => b.type === 'tool_result');
+        Array.isArray(msg.content) && msg.content.some((b) => b.type === 'tool_result');
       if (rawText.trim() && !hasToolResults) {
         displayItems.push({
           type: 'subagent_input',
@@ -515,7 +513,7 @@ export function buildDisplayItemsFromMessages(
 
     // Skip Task tool calls that have associated subagents
     // The subagent will be shown separately, so showing the Task call is redundant
-    const isTaskWithSubagent = call.name === 'Task' && taskIdsWithSubagents.has(toolId);
+    const isTaskWithSubagent = taskIdsWithSubagents.has(toolId);
     if (isTaskWithSubagent) {
       continue;
     }

@@ -50,7 +50,7 @@ export const ThinkingItem: React.FC<ThinkingItemProps> = React.memo(function Thi
       highlightStyle={highlightStyle}
       notificationDotColor={notificationDotColor}
     >
-      <MarkdownViewer content={fullContent} maxHeight="max-h-96" copyable />
+      <MarkdownViewer content={fullContent} copyable />
     </BaseItem>
   );
 });

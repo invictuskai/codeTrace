@@ -29,4 +29,3 @@ export * from './SshConfigParser';
 export * from './SshConnectionManager';
 export * from './SshFileSystemProvider';
 export * from './TriggerManager';
-export * from './UpdaterService';

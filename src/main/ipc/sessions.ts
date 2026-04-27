@@ -26,6 +26,7 @@ import {
 import { coercePageLimit, validateProjectId, validateSessionId } from './guards';
 
 import type { ServiceContextRegistry } from '../services';
+import type { SessionDetailOptions } from '@shared/types';
 import type { WaterfallData } from '@shared/types';
 
 const logger = createLogger('IPC:sessions');
@@ -198,7 +199,8 @@ async function handleGetSessionsByIds(
 async function handleGetSessionDetail(
   _event: IpcMainInvokeEvent,
   projectId: string,
-  sessionId: string
+  sessionId: string,
+  options?: SessionDetailOptions
 ): Promise<SessionDetail | null> {
   try {
     const validatedProject = validateProjectId(projectId);
@@ -216,6 +218,10 @@ async function handleGetSessionDetail(
     const safeProjectId = validatedProject.value!;
     const safeSessionId = validatedSession.value!;
     const cacheKey = DataCache.buildKey(safeProjectId, safeSessionId);
+    const forceRefresh = options?.forceRefresh === true;
+    if (forceRefresh) {
+      dataCache.invalidateSession(safeProjectId, safeSessionId);
+    }
 
     // Stat the JSONL file so we can fingerprint the cache entry.
     // Without this, a missed FileWatcher event leaves a stale cache entry

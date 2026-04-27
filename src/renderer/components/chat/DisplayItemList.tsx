@@ -27,6 +27,11 @@ import type { TriggerColor } from '@shared/constants/triggerColors';
 interface DisplayItemListProps {
   items: AIGroupDisplayItem[];
   onItemClick: (itemId: string) => void;
+  /**
+   * Set of item IDs that have been *manually expanded* by the user (or
+   * programmatically expanded for navigation/search highlights). Items absent
+   * from this set render in their collapsed state by default.
+   */
   expandedItemIds: Set<string>;
   aiGroupId: string;
   /** Tool use ID to highlight for error deep linking */
@@ -71,6 +76,8 @@ export const DisplayItemList = React.memo(function DisplayItemList({
   notificationColorMap,
   registerToolRef,
 }: Readonly<DisplayItemListProps>): React.JSX.Element {
+  // Items default to collapsed; the expanded set tracks user/programmatic overrides.
+  const isItemExpanded = (itemKey: string): boolean => expandedItemIds.has(itemKey);
   // Reply-link highlight: when hovering a reply badge, dim everything except the linked pair
   const [replyLinkToolId, setReplyLinkToolId] = useState<string | null>(null);
 
@@ -119,7 +126,7 @@ export const DisplayItemList = React.memo(function DisplayItemList({
                 step={thinkingStep}
                 preview={truncateText(item.content, 150)}
                 onClick={() => onItemClick(itemKey)}
-                isExpanded={expandedItemIds.has(itemKey)}
+                isExpanded={isItemExpanded(itemKey)}
               />
             );
             break;
@@ -142,7 +149,7 @@ export const DisplayItemList = React.memo(function DisplayItemList({
                 step={textStep}
                 preview={truncateText(item.content, 150)}
                 onClick={() => onItemClick(itemKey)}
-                isExpanded={expandedItemIds.has(itemKey)}
+                isExpanded={isItemExpanded(itemKey)}
               />
             );
             break;
@@ -154,7 +161,7 @@ export const DisplayItemList = React.memo(function DisplayItemList({
               <LinkedToolItem
                 linkedTool={item.tool}
                 onClick={() => onItemClick(itemKey)}
-                isExpanded={expandedItemIds.has(itemKey)}
+                isExpanded={isItemExpanded(itemKey)}
                 isHighlighted={highlightToolUseId === item.tool.id}
                 highlightColor={highlightColor}
                 notificationDotColor={notificationColorMap?.get(item.tool.id)}
@@ -186,7 +193,7 @@ export const DisplayItemList = React.memo(function DisplayItemList({
                 step={subagentStep}
                 subagent={item.subagent}
                 onClick={() => onItemClick(itemKey)}
-                isExpanded={expandedItemIds.has(itemKey)}
+                isExpanded={isItemExpanded(itemKey)}
                 aiGroupId={aiGroupId}
                 highlightToolUseId={highlightToolUseId}
                 highlightColor={highlightColor}
@@ -203,7 +210,7 @@ export const DisplayItemList = React.memo(function DisplayItemList({
               <SlashItem
                 slash={item.slash}
                 onClick={() => onItemClick(itemKey)}
-                isExpanded={expandedItemIds.has(itemKey)}
+                isExpanded={isItemExpanded(itemKey)}
               />
             );
             break;
@@ -215,7 +222,7 @@ export const DisplayItemList = React.memo(function DisplayItemList({
               <TeammateMessageItem
                 teammateMessage={item.teammateMessage}
                 onClick={() => onItemClick(itemKey)}
-                isExpanded={expandedItemIds.has(itemKey)}
+                isExpanded={isItemExpanded(itemKey)}
                 onReplyHover={handleReplyHover}
               />
             );
@@ -229,11 +236,11 @@ export const DisplayItemList = React.memo(function DisplayItemList({
             element = (
               <BaseItem
                 icon={<MailOpen className="size-4" />}
-                label="Input"
+                label="LLM(Input)"
                 summary={truncateText(inputContent, 80)}
                 tokenCount={inputTokenCount}
                 onClick={() => onItemClick(itemKey)}
-                isExpanded={expandedItemIds.has(itemKey)}
+                isExpanded={isItemExpanded(itemKey)}
               >
                 <MarkdownViewer content={inputContent} copyable />
               </BaseItem>
@@ -244,7 +251,7 @@ export const DisplayItemList = React.memo(function DisplayItemList({
           case 'compact_boundary': {
             itemKey = `compact-${index}`;
             const compactContent = item.content;
-            const compactExpanded = expandedItemIds.has(itemKey);
+            const compactExpanded = isItemExpanded(itemKey);
             element = (
               <div>
                 <button
@@ -307,7 +314,7 @@ export const DisplayItemList = React.memo(function DisplayItemList({
                     }}
                   >
                     <div
-                      className="max-h-64 overflow-y-auto border-l-2 px-3 py-2"
+                      className="overflow-y-auto border-l-2 px-3 py-2"
                       style={{ borderColor: 'var(--chat-ai-border)' }}
                     >
                       <MarkdownViewer content={compactContent} copyable />

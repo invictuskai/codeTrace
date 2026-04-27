@@ -35,6 +35,10 @@ interface UseTabUIReturn {
   isAIGroupExpanded: (aiGroupId: string) => boolean;
   toggleAIGroupExpansion: (aiGroupId: string) => void;
   expandAIGroup: (aiGroupId: string) => void;
+  /**
+   * Returns the set of display item IDs that have been manually expanded for the
+   * given AI group. Items not in this set are considered collapsed by default.
+   */
   getExpandedDisplayItemIds: (aiGroupId: string) => Set<string>;
   toggleDisplayItemExpansion: (aiGroupId: string, itemId: string) => void;
   expandDisplayItem: (aiGroupId: string, itemId: string) => void;
@@ -128,7 +132,8 @@ export function useTabUI(): UseTabUIReturn {
     [tabId, expandAIGroupForTab]
   );
 
-  // Display item expansion - derive from tabState
+  // Display item expansion - derive from tabState (expanded-set semantics).
+  // Items default to collapsed; this set tracks user/programmatic expansions.
   const getExpandedDisplayItemIds = useCallback(
     (aiGroupId: string): Set<string> => {
       return tabState?.expandedDisplayItemIds.get(aiGroupId) ?? new Set<string>();

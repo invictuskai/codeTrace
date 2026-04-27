@@ -29,6 +29,7 @@ import type {
   Session,
   SessionAPI,
   SessionDetail,
+  SessionDetailOptions,
   SessionMetrics,
   SessionsByIdsOptions,
   SessionsPaginationOptions,
@@ -39,12 +40,10 @@ import type {
   SshLastConnection,
   SubagentDetail,
   TriggerTestResult,
-  UpdaterAPI,
   WaterfallData,
   WslClaudeRootCandidate,
 } from '@shared/types';
 import type { AgentConfig } from '@shared/types/api';
-
 export class HttpAPIClient implements ElectronAPI {
   private baseUrl: string;
   private eventSource: EventSource | null = null;
@@ -231,10 +230,17 @@ export class HttpAPIClient implements ElectronAPI {
       `/api/sessions/search-by-id/${encodeURIComponent(fragment)}`
     );
 
-  getSessionDetail = (projectId: string, sessionId: string): Promise<SessionDetail | null> =>
-    this.get<SessionDetail | null>(
-      `/api/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`
-    );
+  getSessionDetail = (
+    projectId: string,
+    sessionId: string,
+    options?: SessionDetailOptions
+  ): Promise<SessionDetail | null> => {
+    const params = new URLSearchParams();
+    if (options?.forceRefresh) params.set('refresh', '1');
+    const query = params.toString();
+    const path = `/api/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`;
+    return this.get<SessionDetail | null>(query ? `${path}?${query}` : path);
+  };
 
   getSessionMetrics = (projectId: string, sessionId: string): Promise<SessionMetrics | null> =>
     this.get<SessionMetrics | null>(
@@ -528,25 +534,6 @@ export class HttpAPIClient implements ElectronAPI {
     close: async (): Promise<void> => {},
     isMaximized: async (): Promise<boolean> => false,
     relaunch: async (): Promise<void> => {},
-  };
-
-  // ---------------------------------------------------------------------------
-  // Updater (browser no-ops)
-  // ---------------------------------------------------------------------------
-
-  updater: UpdaterAPI = {
-    check: async (): Promise<void> => {
-      console.warn('[HttpAPIClient] updater not available in browser mode');
-    },
-    download: async (): Promise<void> => {
-      console.warn('[HttpAPIClient] updater not available in browser mode');
-    },
-    install: async (): Promise<void> => {
-      console.warn('[HttpAPIClient] updater not available in browser mode');
-    },
-    onStatus: (_callback): (() => void) => {
-      return () => {};
-    },
   };
 
   // ---------------------------------------------------------------------------

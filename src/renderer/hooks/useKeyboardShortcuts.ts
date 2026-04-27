@@ -8,12 +8,9 @@
 
 import { useEffect } from 'react';
 
-import { createLogger } from '@shared/utils/logger';
 import { useShallow } from 'zustand/react/shallow';
 
 import { useStore } from '../store';
-
-const logger = createLogger('Hook:KeyboardShortcuts');
 
 export function useKeyboardShortcuts(): void {
   const {
@@ -249,10 +246,11 @@ export function useKeyboardShortcuts(): void {
         return;
       }
 
-      // Cmd+O: Open project (placeholder for future implementation)
+      // Cmd+O: Open project via the command palette
       if (event.key === 'o') {
         event.preventDefault();
-        logger.debug('Open project shortcut triggered (not yet implemented)');
+        openDashboard();
+        openCommandPalette();
         return;
       }
 
@@ -261,7 +259,7 @@ export function useKeyboardShortcuts(): void {
         event.preventDefault();
         if (selectedProjectId && selectedSessionId) {
           void Promise.all([
-            refreshSessionInPlace(selectedProjectId, selectedSessionId),
+            refreshSessionInPlace(selectedProjectId, selectedSessionId, { forceRefresh: true }),
             fetchSessions(selectedProjectId),
           ]).then(() => {
             window.dispatchEvent(new CustomEvent('session-refresh-scroll-bottom'));

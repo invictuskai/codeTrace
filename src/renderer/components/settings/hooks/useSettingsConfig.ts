@@ -156,7 +156,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
         theme: displayConfig?.general?.theme ?? 'dark',
         defaultTab: displayConfig?.general?.defaultTab ?? 'dashboard',
         claudeRootPath: displayConfig?.general?.claudeRootPath ?? null,
-        autoExpandAIGroups: displayConfig?.general?.autoExpandAIGroups ?? false,
+        autoExpandAIGroups: displayConfig?.general?.autoExpandAIGroups ?? true,
         useNativeTitleBar: displayConfig?.general?.useNativeTitleBar ?? false,
       },
       notifications: {

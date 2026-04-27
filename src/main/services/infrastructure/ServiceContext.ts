@@ -15,6 +15,7 @@ import { ChunkBuilder } from '@main/services/analysis/ChunkBuilder';
 import { ProjectScanner } from '@main/services/discovery/ProjectScanner';
 import { SubagentResolver } from '@main/services/discovery/SubagentResolver';
 import { SessionParser } from '@main/services/parsing/SessionParser';
+import { getCodexSessionsBasePath } from '@main/utils/codexPaths';
 import {
   CACHE_CLEANUP_INTERVAL_MINUTES,
   CACHE_TTL_MINUTES,
@@ -92,7 +93,8 @@ export class ServiceContext {
     this.projectScanner = new ProjectScanner(
       config.projectsDir,
       config.todosDir,
-      config.fsProvider
+      config.fsProvider,
+      config.type === 'local' ? getCodexSessionsBasePath() : null
     );
 
     // 2. SessionParser - depends on ProjectScanner
@@ -112,7 +114,8 @@ export class ServiceContext {
       this.dataCache,
       config.projectsDir,
       config.todosDir,
-      config.fsProvider
+      config.fsProvider,
+      config.type === 'local' ? getCodexSessionsBasePath() : null
     );
     this.fileWatcher.setProjectScanner(this.projectScanner);
 

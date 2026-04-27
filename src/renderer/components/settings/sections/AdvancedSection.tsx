@@ -2,12 +2,11 @@
  * AdvancedSection - Advanced settings including config management and about info.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { api, isElectronMode } from '@renderer/api';
 import appIcon from '@renderer/favicon.png';
-import { useStore } from '@renderer/store';
-import { CheckCircle, Code2, Download, Loader2, RefreshCw, Upload } from 'lucide-react';
+import { Code2, Download, RefreshCw, Upload } from 'lucide-react';
 
 import { SettingsSectionHeader } from '../components';
 
@@ -28,66 +27,10 @@ export const AdvancedSection = ({
 }: AdvancedSectionProps): React.JSX.Element => {
   const isElectron = useMemo(() => isElectronMode(), []);
   const [version, setVersion] = useState<string>('');
-  const updateStatus = useStore((s) => s.updateStatus);
-  const availableVersion = useStore((s) => s.availableVersion);
-  const checkForUpdates = useStore((s) => s.checkForUpdates);
-
-  // Auto-revert "not-available" / "error" status back to idle after a brief display
-  const revertTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  useEffect(() => {
-    if (updateStatus === 'not-available' || updateStatus === 'error') {
-      revertTimerRef.current = setTimeout(() => {
-        useStore.setState({ updateStatus: 'idle' });
-      }, 3000);
-    }
-    return () => {
-      if (revertTimerRef.current) clearTimeout(revertTimerRef.current);
-    };
-  }, [updateStatus]);
 
   useEffect(() => {
     api.getAppVersion().then(setVersion).catch(console.error);
   }, []);
-
-  const handleCheckForUpdates = useCallback(() => {
-    checkForUpdates();
-  }, [checkForUpdates]);
-
-  const getUpdateButtonContent = (): React.JSX.Element => {
-    switch (updateStatus) {
-      case 'checking':
-        return (
-          <>
-            <Loader2 className="size-3.5 animate-spin" />
-            Checking...
-          </>
-        );
-      case 'not-available':
-        return (
-          <>
-            <CheckCircle className="size-3.5" />
-            Up to date
-          </>
-        );
-      case 'available':
-      case 'downloaded':
-        return (
-          <>
-            <Download className="size-3.5" />
-            {updateStatus === 'downloaded'
-              ? 'Update ready'
-              : `v${availableVersion ?? 'unknown'} available`}
-          </>
-        );
-      default:
-        return (
-          <>
-            <RefreshCw className="size-3.5" />
-            Check for Updates
-          </>
-        );
-    }
-  };
 
   return (
     <div>
@@ -150,26 +93,8 @@ export const AdvancedSection = ({
         <div>
           <div className="flex items-center gap-3">
             <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-              claude-devtools
+              codeTrace
             </p>
-            {isElectron && (
-              <button
-                onClick={handleCheckForUpdates}
-                disabled={updateStatus === 'checking'}
-                className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-white/5 disabled:opacity-50"
-                style={{
-                  borderColor: 'var(--color-border)',
-                  color:
-                    updateStatus === 'not-available'
-                      ? 'var(--color-text-muted)'
-                      : updateStatus === 'available' || updateStatus === 'downloaded'
-                        ? '#60a5fa'
-                        : 'var(--color-text-secondary)',
-                }}
-              >
-                {getUpdateButtonContent()}
-              </button>
-            )}
             {!isElectron && (
               <span
                 className="rounded-md border px-2.5 py-1 text-xs font-medium"

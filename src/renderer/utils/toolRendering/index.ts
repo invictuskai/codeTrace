@@ -6,8 +6,13 @@
 
 export {
   hasEditContent,
+  hasPatchContent,
   hasReadContent,
+  hasShellCommandContent,
   hasSkillInstructions,
+  hasUpdatePlanContent,
+  hasViewImageContent,
+  hasWebSearchContent,
   hasWriteContent,
 } from './toolContentChecks';
 export { getToolSummary } from './toolSummaryHelpers';

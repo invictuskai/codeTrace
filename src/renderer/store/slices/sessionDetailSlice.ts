@@ -45,7 +45,7 @@ import type {
 } from '@renderer/types/contextInjection';
 import type { ClaudeMdFileInfo, SessionDetail } from '@renderer/types/data';
 import type { AIGroup, SessionConversation } from '@renderer/types/groups';
-import type { AgentConfig } from '@shared/types/api';
+import type { AgentConfig, SessionDetailOptions } from '@shared/types/api';
 import type { StateCreator } from 'zustand';
 
 // =============================================================================
@@ -112,9 +112,18 @@ export interface SessionDetailSlice {
   tabSessionData: Record<string, TabSessionData>;
 
   // Actions
-  fetchSessionDetail: (projectId: string, sessionId: string, tabId?: string) => Promise<void>;
+  fetchSessionDetail: (
+    projectId: string,
+    sessionId: string,
+    tabId?: string,
+    options?: SessionDetailOptions
+  ) => Promise<void>;
   /** Refresh session without loading states or UI resets - for real-time updates */
-  refreshSessionInPlace: (projectId: string, sessionId: string) => Promise<void>;
+  refreshSessionInPlace: (
+    projectId: string,
+    sessionId: string,
+    options?: SessionDetailOptions
+  ) => Promise<void>;
   setVisibleAIGroup: (aiGroupId: string | null) => void;
   /** Set visible AI group for a specific tab */
   setTabVisibleAIGroup: (tabId: string, aiGroupId: string | null) => void;
@@ -154,7 +163,12 @@ export const createSessionDetailSlice: StateCreator<AppState, [], [], SessionDet
   tabSessionData: {},
 
   // Fetch full session detail with chunks and subagents
-  fetchSessionDetail: async (projectId: string, sessionId: string, tabId?: string) => {
+  fetchSessionDetail: async (
+    projectId: string,
+    sessionId: string,
+    tabId?: string,
+    options?: SessionDetailOptions
+  ) => {
     const requestGeneration = ++sessionDetailFetchGeneration;
     set({
       sessionDetailLoading: true,
@@ -178,7 +192,7 @@ export const createSessionDetailSlice: StateCreator<AppState, [], [], SessionDet
       });
     }
     try {
-      const detail = await api.getSessionDetail(projectId, sessionId);
+      const detail = await api.getSessionDetail(projectId, sessionId, options);
       if (requestGeneration !== sessionDetailFetchGeneration) {
         return;
       }
@@ -265,7 +279,8 @@ export const createSessionDetailSlice: StateCreator<AppState, [], [], SessionDet
       });
 
       // Auto-expand all AI groups if the setting is enabled
-      if (tabId && conversation?.items && get().appConfig?.general?.autoExpandAIGroups) {
+      // Treats undefined as "on" so first-launch users see the new default-expanded behavior.
+      if (tabId && conversation?.items && get().appConfig?.general?.autoExpandAIGroups !== false) {
         for (const item of conversation.items) {
           if (item.type === 'ai') {
             get().expandAIGroupForTab(tabId, item.group.id);
@@ -521,7 +536,11 @@ export const createSessionDetailSlice: StateCreator<AppState, [], [], SessionDet
 
   // Refresh session in place without loading states or UI resets
   // Used for real-time file change updates to avoid flickering
-  refreshSessionInPlace: async (projectId: string, sessionId: string) => {
+  refreshSessionInPlace: async (
+    projectId: string,
+    sessionId: string,
+    options?: SessionDetailOptions
+  ) => {
     const currentState = get();
 
     // Check if any tab is viewing this session (across all panes)
@@ -547,7 +566,12 @@ export const createSessionDetailSlice: StateCreator<AppState, [], [], SessionDet
     sessionRefreshInFlight.add(refreshKey);
 
     try {
-      const detail = await api.getSessionDetail(projectId, sessionId);
+      const forceRefresh = options?.forceRefresh === true;
+      const detail = await api.getSessionDetail(
+        projectId,
+        sessionId,
+        forceRefresh ? { forceRefresh: true } : undefined
+      );
 
       // Drop stale responses if a newer refresh started while this one was in flight.
       if (sessionRefreshGeneration.get(refreshKey) !== generation) {
@@ -572,7 +596,7 @@ export const createSessionDetailSlice: StateCreator<AppState, [], [], SessionDet
       const lastChunk = enhancedChunks[enhancedChunks.length - 1];
       const fingerprint = `${enhancedChunks.length}:${lastChunk?.rawMessages?.length ?? 0}:${isOngoing}`;
       const prevFingerprint = sessionChunkFingerprint.get(refreshKey);
-      if (fingerprint === prevFingerprint) {
+      if (fingerprint === prevFingerprint && !forceRefresh) {
         return; // Nothing changed — skip transformation
       }
       sessionChunkFingerprint.set(refreshKey, fingerprint);
@@ -584,11 +608,11 @@ export const createSessionDetailSlice: StateCreator<AppState, [], [], SessionDet
       // ---------------------------------------------------------------
       const slimDetail = { ...detail, chunks: [], processes: [] };
 
-      // Use incremental update when a previous conversation exists —
-      // reuses unchanged ChatItem objects, only re-transforms the tail.
+      // Use incremental update for live refreshes only. Force refresh must
+      // rebuild every item so parser/rendering fixes apply to old chunks too.
       const prevConversation = get().conversation;
       const newConversation =
-        prevConversation && prevConversation.items.length > 0
+        prevConversation && prevConversation.items.length > 0 && !forceRefresh
           ? incrementalUpdateConversation(prevConversation, enhancedChunks, [], isOngoing)
           : transformChunksToConversation(enhancedChunks, [], isOngoing);
 
@@ -656,7 +680,8 @@ export const createSessionDetailSlice: StateCreator<AppState, [], [], SessionDet
 
       // Auto-expand newly arrived AI groups if the setting is enabled.
       // Uses prevGroupIds snapshotted before set() so the diff is accurate.
-      if (get().appConfig?.general?.autoExpandAIGroups) {
+      // Treats undefined as "on" so first-launch users see the new default-expanded behavior.
+      if (get().appConfig?.general?.autoExpandAIGroups !== false) {
         const oldGroupIds = prevGroupIds;
         const newGroupIds = newConversation.items
           .filter(

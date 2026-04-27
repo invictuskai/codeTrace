@@ -97,8 +97,8 @@ function createViewerMarkdownComponents(searchCtx: SearchContext | null): Compon
     // Paragraphs
     p: ({ children }) => (
       <p
-        className="my-2 text-sm leading-relaxed first:mt-0 last:mb-0"
-        style={{ color: PROSE_BODY }}
+        className="my-2 break-words text-sm leading-relaxed first:mt-0 last:mb-0"
+        style={{ color: PROSE_BODY, overflowWrap: 'anywhere' }}
       >
         {hl(children)}
       </p>
@@ -186,7 +186,7 @@ function createViewerMarkdownComponents(searchCtx: SearchContext | null): Compon
       // Inline code — no hl(); parent block element's hl() descends here
       return (
         <code
-          className="rounded px-1.5 py-0.5 font-mono text-xs"
+          className="break-all rounded px-1.5 py-0.5 font-mono text-xs"
           style={{
             backgroundColor: PROSE_CODE_BG,
             color: PROSE_CODE_TEXT,
@@ -300,7 +300,7 @@ const defaultComponents = createViewerMarkdownComponents(null);
 
 export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
   content,
-  maxHeight = 'max-h-96',
+  maxHeight = '',
   className = '',
   label,
   itemId,
@@ -364,7 +364,7 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
 
       {/* Markdown content with scroll */}
       <div className={`overflow-auto ${maxHeight}`}>
-        <div className="p-4">
+        <div className="break-words p-4" style={{ overflowWrap: 'anywhere' }}>
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
             {content}
           </ReactMarkdown>

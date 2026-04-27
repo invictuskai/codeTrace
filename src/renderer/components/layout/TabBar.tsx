@@ -217,7 +217,7 @@ export const TabBar = ({ paneId }: TabBarProps): React.JSX.Element => {
   const handleRefresh = async (): Promise<void> => {
     if (activeTab?.type === 'session' && activeTab.projectId && activeTab.sessionId) {
       await Promise.all([
-        refreshSessionInPlace(activeTab.projectId, activeTab.sessionId),
+        refreshSessionInPlace(activeTab.projectId, activeTab.sessionId, { forceRefresh: true }),
         fetchSessions(activeTab.projectId),
       ]);
       window.dispatchEvent(new CustomEvent('session-refresh-scroll-bottom'));

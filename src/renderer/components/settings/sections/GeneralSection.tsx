@@ -292,7 +292,7 @@ export const GeneralSection = ({
         description="Automatically expand each response turn when opening a transcript or receiving a new message"
       >
         <SettingsToggle
-          enabled={safeConfig.general.autoExpandAIGroups ?? false}
+          enabled={safeConfig.general.autoExpandAIGroups ?? true}
           onChange={(v) => onGeneralToggle('autoExpandAIGroups', v)}
           disabled={saving}
         />

@@ -15,7 +15,6 @@ import { SessionContextPanel } from './SessionContextPanel/index';
 const SCROLL_THRESHOLD = 300;
 /** Must match the `w-80` (320px) context panel width used in the layout below. */
 const CONTEXT_PANEL_WIDTH_PX = 320;
-
 import { ChatHistoryEmptyState } from './ChatHistoryEmptyState';
 import { ChatHistoryItem } from './ChatHistoryItem';
 import { ChatHistoryLoadingState } from './ChatHistoryLoadingState';
@@ -410,7 +409,9 @@ export const ChatHistory = ({ tabId }: ChatHistoryProps): JSX.Element => {
 
       const run = async (): Promise<void> => {
         const groupId = targetItem.group.id;
+        expandAIGroup(groupId);
         await ensureGroupVisible(groupId);
+        await waitForDoubleRaf();
         const element = aiGroupRefs.current.get(groupId);
         if (!element) return;
 
@@ -428,7 +429,7 @@ export const ChatHistory = ({ tabId }: ChatHistoryProps): JSX.Element => {
       };
       void run();
     },
-    [conversation, ensureGroupVisible, setHighlightedGroupId]
+    [conversation, expandAIGroup, ensureGroupVisible, setHighlightedGroupId]
   );
 
   // Handler to navigate to a user message group (preceding the AI group at turnIndex)
@@ -478,12 +479,14 @@ export const ChatHistory = ({ tabId }: ChatHistoryProps): JSX.Element => {
 
       const run = async (): Promise<void> => {
         const groupId = targetItem.group.id;
+        expandAIGroup(groupId);
         await ensureGroupVisible(groupId);
 
         // Set group + tool highlight immediately
         setHighlightedGroupId(groupId);
         setIsNavigationHighlight(true);
         setContextNavToolUseId(toolUseId);
+        await waitForDoubleRaf();
 
         // Wait for tool element to appear in DOM (up to 500ms)
         let toolElement: HTMLElement | undefined;
@@ -513,7 +516,7 @@ export const ChatHistory = ({ tabId }: ChatHistoryProps): JSX.Element => {
       };
       void run();
     },
-    [conversation, ensureGroupVisible, setHighlightedGroupId]
+    [conversation, expandAIGroup, ensureGroupVisible, setHighlightedGroupId]
   );
 
   // Scroll to current search result when it changes
@@ -854,10 +857,12 @@ export const ChatHistory = ({ tabId }: ChatHistoryProps): JSX.Element => {
             }}
             className="absolute bottom-5 z-20 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs shadow-lg transition-[right] duration-200"
             style={{
-              right:
-                isContextPanelVisible && allContextInjections.length > 0
-                  ? `calc(${CONTEXT_PANEL_WIDTH_PX}px + 1rem)`
-                  : '1rem',
+              right: (() => {
+                let offset = 16; // 1rem
+                if (isContextPanelVisible && allContextInjections.length > 0)
+                  offset += CONTEXT_PANEL_WIDTH_PX;
+                return `${offset}px`;
+              })(),
               backgroundColor: 'var(--context-btn-bg)',
               color: 'var(--color-text-secondary)',
               border: '1px solid var(--color-border-emphasis)',

@@ -2,7 +2,7 @@
  * NotificationManager service - Manages native macOS notifications and error history.
  *
  * Responsibilities:
- * - Store error history at ~/.claude/claude-devtools-notifications.json (max 100 entries)
+ * - Store error history at ~/.claude/codetrace-notifications.json (max 100 entries)
  * - Show native macOS notifications using Electron's Notification API
  * - Implement throttling (5 seconds per unique error hash)
  * - Respect config.notifications.enabled and snoozedUntil
@@ -77,7 +77,11 @@ const MAX_NOTIFICATIONS = 100;
 const THROTTLE_MS = 5000;
 
 /** Path to notifications storage file */
-const NOTIFICATIONS_PATH = path.join(os.homedir(), '.claude', 'claude-devtools-notifications.json');
+const NOTIFICATIONS_DIR = path.join(os.homedir(), '.claude');
+const NOTIFICATIONS_FILENAME = 'codetrace-notifications.json';
+const LEGACY_NOTIFICATIONS_FILENAME = 'claude-devtools-notifications.json';
+const NOTIFICATIONS_PATH = path.join(NOTIFICATIONS_DIR, NOTIFICATIONS_FILENAME);
+const LEGACY_NOTIFICATIONS_PATH = path.join(NOTIFICATIONS_DIR, LEGACY_NOTIFICATIONS_FILENAME);
 
 // =============================================================================
 // NotificationManager Class
@@ -161,8 +165,9 @@ export class NotificationManager extends EventEmitter {
    */
   private loadNotifications(): void {
     try {
-      if (fs.existsSync(NOTIFICATIONS_PATH)) {
-        const data = fs.readFileSync(NOTIFICATIONS_PATH, 'utf8');
+      const notificationsPath = this.resolveNotificationsPathForRead();
+      if (notificationsPath) {
+        const data = fs.readFileSync(notificationsPath, 'utf8');
         const parsed = JSON.parse(data) as unknown;
 
         if (Array.isArray(parsed)) {
@@ -176,6 +181,16 @@ export class NotificationManager extends EventEmitter {
       logger.error('Error loading notifications:', error);
       this.notifications = [];
     }
+  }
+
+  private resolveNotificationsPathForRead(): string | null {
+    if (fs.existsSync(NOTIFICATIONS_PATH)) {
+      return NOTIFICATIONS_PATH;
+    }
+    if (fs.existsSync(LEGACY_NOTIFICATIONS_PATH)) {
+      return LEGACY_NOTIFICATIONS_PATH;
+    }
+    return null;
   }
 
   /**

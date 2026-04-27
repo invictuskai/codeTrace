@@ -112,22 +112,6 @@ export const SSH_GET_LAST_CONNECTION = 'ssh:getLastConnection';
 export const SSH_STATUS = 'ssh:status';
 
 // =============================================================================
-// Updater API Channels
-// =============================================================================
-
-/** Check for updates */
-export const UPDATER_CHECK = 'updater:check';
-
-/** Download available update */
-export const UPDATER_DOWNLOAD = 'updater:download';
-
-/** Quit and install downloaded update */
-export const UPDATER_INSTALL = 'updater:install';
-
-/** Status event channel (main -> renderer) */
-export const UPDATER_STATUS = 'updater:status';
-
-// =============================================================================
 // Context API Channels
 // =============================================================================
 

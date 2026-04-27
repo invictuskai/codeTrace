@@ -1,5 +1,5 @@
 /**
- * ConfigManager service - Manages app configuration stored at ~/.claude/claude-devtools-config.json.
+ * ConfigManager service - Manages app configuration stored at ~/.claude/codetrace-config.json.
  *
  * Responsibilities:
  * - Load configuration from disk on initialization
@@ -24,8 +24,10 @@ import type { SshConnectionProfile } from '@shared/types/api';
 const logger = createLogger('Service:ConfigManager');
 
 const CONFIG_DIR = path.join(os.homedir(), '.claude');
-const CONFIG_FILENAME = 'claude-devtools-config.json';
-const DEFAULT_CONFIG_PATH = path.join(CONFIG_DIR, CONFIG_FILENAME);
+export const CODETRACE_CONFIG_FILENAME = 'codetrace-config.json';
+export const LEGACY_CONFIG_FILENAME = 'claude-devtools-config.json';
+const DEFAULT_CONFIG_PATH = path.join(CONFIG_DIR, CODETRACE_CONFIG_FILENAME);
+const DEFAULT_LEGACY_CONFIG_PATH = path.join(CONFIG_DIR, LEGACY_CONFIG_FILENAME);
 
 // ===========================================================================
 // Types
@@ -250,7 +252,7 @@ const DEFAULT_CONFIG: AppConfig = {
     theme: 'system',
     defaultTab: 'dashboard',
     claudeRootPath: null,
-    autoExpandAIGroups: false,
+    autoExpandAIGroups: true,
     useNativeTitleBar: false,
   },
   display: {
@@ -313,11 +315,18 @@ function normalizeConfiguredClaudeRootPath(value: unknown): string | null {
 export class ConfigManager {
   private config: AppConfig;
   private readonly configPath: string;
+  private readonly legacyConfigPath: string | null;
   private static instance: ConfigManager | null = null;
   private triggerManager: TriggerManager;
 
-  constructor(configPath?: string) {
+  constructor(configPath?: string, legacyConfigPath?: string | null) {
     this.configPath = configPath ?? DEFAULT_CONFIG_PATH;
+    this.legacyConfigPath =
+      legacyConfigPath === undefined
+        ? configPath
+          ? null
+          : DEFAULT_LEGACY_CONFIG_PATH
+        : legacyConfigPath;
     this.config = this.deepClone(DEFAULT_CONFIG);
     this.triggerManager = new TriggerManager(this.config.notifications.triggers, () =>
       this.saveConfig()
@@ -354,8 +363,11 @@ export class ConfigManager {
    * Creates and initializes the singleton instance asynchronously.
    * Loads configuration from disk. Call this at app startup.
    */
-  static async initializeInstance(configPath?: string): Promise<ConfigManager> {
-    const instance = new ConfigManager(configPath);
+  static async initializeInstance(
+    configPath?: string,
+    legacyConfigPath?: string | null
+  ): Promise<ConfigManager> {
+    const instance = new ConfigManager(configPath, legacyConfigPath);
     ConfigManager.instance = instance;
     await instance.initialize();
     return instance;
@@ -378,14 +390,13 @@ export class ConfigManager {
    */
   private async loadConfig(): Promise<AppConfig> {
     try {
-      try {
-        await fs.promises.access(this.configPath);
-      } catch {
+      const configPath = await this.resolveConfigPathForRead();
+      if (!configPath) {
         logger.info('No config file found, using defaults');
         return this.deepClone(DEFAULT_CONFIG);
       }
 
-      const content = await fs.promises.readFile(this.configPath, 'utf8');
+      const content = await fs.promises.readFile(configPath, 'utf8');
       const parsed = JSON.parse(content) as Partial<AppConfig>;
 
       // Merge with defaults to ensure all fields exist
@@ -394,6 +405,23 @@ export class ConfigManager {
       logger.error('Error loading config, using defaults:', error);
       return this.deepClone(DEFAULT_CONFIG);
     }
+  }
+
+  private async resolveConfigPathForRead(): Promise<string | null> {
+    const candidates = [this.configPath, this.legacyConfigPath].filter(
+      (candidate): candidate is string => Boolean(candidate)
+    );
+
+    for (const candidate of candidates) {
+      try {
+        await fs.promises.access(candidate);
+        return candidate;
+      } catch {
+        // Try next candidate.
+      }
+    }
+
+    return null;
   }
 
   /**

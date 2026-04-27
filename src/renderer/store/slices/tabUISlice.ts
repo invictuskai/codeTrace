@@ -28,7 +28,12 @@ export interface TabUIState {
   /** Which AI groups are expanded (by aiGroupId) */
   expandedAIGroupIds: Set<string>;
 
-  /** Which display items within AI groups are expanded: Map<aiGroupId, Set<itemId>> */
+  /**
+   * Which display items within AI groups have been *manually expanded*.
+   * Display items are collapsed by default; this set tracks user overrides
+   * (including programmatic expansions for navigation/search highlights).
+   * Map<aiGroupId, Set<itemId>>
+   */
   expandedDisplayItemIds: Map<string, Set<string>>;
 
   /** Which subagent traces are manually expanded (by subagentId) */
@@ -81,11 +86,15 @@ export interface TabUISlice {
   expandAIGroupForTab: (tabId: string, aiGroupId: string) => void;
 
   // Display item expansion (per-tab)
+  // NOTE: Display items are collapsed by default. State tracks manual *expansions*.
   /** Toggle display item expansion within an AI group for a specific tab */
   toggleDisplayItemExpansionForTab: (tabId: string, aiGroupId: string, itemId: string) => void;
-  /** Get expanded display item IDs for an AI group in a specific tab */
+  /**
+   * Get the set of display item IDs that have been manually expanded for an
+   * AI group in a specific tab. Items not in this set are considered collapsed.
+   */
   getExpandedDisplayItemIdsForTab: (tabId: string, aiGroupId: string) => Set<string>;
-  /** Expand a display item for a specific tab (for auto-expand scenarios) */
+  /** Force a display item into the expanded state (adds to the expanded set) */
   expandDisplayItemForTab: (tabId: string, aiGroupId: string, itemId: string) => void;
 
   // Subagent trace expansion (per-tab)
@@ -191,18 +200,20 @@ export const createTabUISlice: StateCreator<AppState, [], [], TabUISlice> = (set
     const newMap = new Map(state.tabUIStates);
     const tabState = newMap.get(tabId) ?? createDefaultTabUIState();
 
-    const newDisplayItemMap = new Map(tabState.expandedDisplayItemIds);
-    const currentSet = newDisplayItemMap.get(aiGroupId) ?? new Set<string>();
+    const newExpandedMap = new Map(tabState.expandedDisplayItemIds);
+    const currentSet = newExpandedMap.get(aiGroupId) ?? new Set<string>();
     const newSet = new Set(currentSet);
 
+    // Items default to collapsed; toggling an unmarked item expands it,
+    // toggling an expanded item collapses it again.
     if (newSet.has(itemId)) {
       newSet.delete(itemId);
     } else {
       newSet.add(itemId);
     }
 
-    newDisplayItemMap.set(aiGroupId, newSet);
-    newMap.set(tabId, { ...tabState, expandedDisplayItemIds: newDisplayItemMap });
+    newExpandedMap.set(aiGroupId, newSet);
+    newMap.set(tabId, { ...tabState, expandedDisplayItemIds: newExpandedMap });
     set({ tabUIStates: newMap });
   },
 
@@ -215,17 +226,18 @@ export const createTabUISlice: StateCreator<AppState, [], [], TabUISlice> = (set
     const state = get();
     const tabState = state.tabUIStates.get(tabId);
     const currentSet = tabState?.expandedDisplayItemIds.get(aiGroupId);
-    if (currentSet?.has(itemId)) return; // Already expanded
+    // No-op if already expanded.
+    if (currentSet?.has(itemId)) return;
 
     const newMap = new Map(state.tabUIStates);
     const currentTabState = newMap.get(tabId) ?? createDefaultTabUIState();
 
-    const newDisplayItemMap = new Map(currentTabState.expandedDisplayItemIds);
-    const newSet = new Set(newDisplayItemMap.get(aiGroupId) ?? new Set<string>());
+    const newExpandedMap = new Map(currentTabState.expandedDisplayItemIds);
+    const newSet = new Set(newExpandedMap.get(aiGroupId) ?? new Set<string>());
     newSet.add(itemId);
-    newDisplayItemMap.set(aiGroupId, newSet);
+    newExpandedMap.set(aiGroupId, newSet);
 
-    newMap.set(tabId, { ...currentTabState, expandedDisplayItemIds: newDisplayItemMap });
+    newMap.set(tabId, { ...currentTabState, expandedDisplayItemIds: newExpandedMap });
     set({ tabUIStates: newMap });
   },
 

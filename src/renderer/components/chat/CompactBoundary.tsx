@@ -142,7 +142,7 @@ export const CompactBoundary = ({
 
           {/* Content - scrollable with left accent bar */}
           <div
-            className="max-h-96 overflow-y-auto border-l-2 px-4 py-3"
+            className="overflow-y-auto border-l-2 px-4 py-3"
             style={{ borderColor: 'var(--chat-ai-border)' }}
           >
             {compactContent ? (

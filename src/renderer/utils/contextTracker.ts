@@ -69,6 +69,11 @@ const TASK_COORDINATION_TOOL_NAMES = new Set([
   'TaskUpdate',
   'TaskList',
   'TaskGet',
+  'spawn_agent',
+  'send_input',
+  'wait_agent',
+  'resume_agent',
+  'close_agent',
 ]);
 
 // =============================================================================

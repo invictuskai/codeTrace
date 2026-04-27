@@ -73,7 +73,7 @@ export class WorktreeGrouper {
     const projectFilteredSessions = new Map<string, string[]>();
     // Fast-first default for both local and SSH: avoid full-file scans during dashboard load.
     // Can be re-enabled for strict parity debugging.
-    const shouldFilterNoise = process.env.CLAUDE_DEVTOOLS_STRICT_SESSION_FILTER === '1';
+    const shouldFilterNoise = process.env.CODETRACE_STRICT_SESSION_FILTER === '1';
     await Promise.all(
       projects.map(async (project) => {
         const baseDir = extractBaseDir(project.id);
@@ -135,33 +135,36 @@ export class WorktreeGrouper {
     const repositoryGroups: RepositoryGroup[] = [];
 
     for (const [groupId, group] of repoGroups) {
-      const worktrees: Worktree[] = await Promise.all(group.projects.map(async (project) => {
-        const branch = group.branches.get(project.id) ?? null;
-        const isMainWorktree = !(await gitIdentityResolver.isWorktree(project.path));
-        // Use filtered sessions instead of raw sessions
-        const filteredSessions = projectFilteredSessions.get(project.id) ?? [];
-        // Detect worktree source for badge display
-        const source = await gitIdentityResolver.detectWorktreeSource(project.path);
-        // Use source-aware display name generation
-        const displayName = await gitIdentityResolver.getWorktreeDisplayName(
-          project.path,
-          source,
-          branch,
-          isMainWorktree
-        );
+      const worktrees: Worktree[] = await Promise.all(
+        group.projects.map(async (project) => {
+          const branch = group.branches.get(project.id) ?? null;
+          const isMainWorktree = !(await gitIdentityResolver.isWorktree(project.path));
+          // Use filtered sessions instead of raw sessions
+          const filteredSessions = projectFilteredSessions.get(project.id) ?? [];
+          // Detect worktree source for badge display
+          const source = await gitIdentityResolver.detectWorktreeSource(project.path);
+          // Use source-aware display name generation
+          const displayName = await gitIdentityResolver.getWorktreeDisplayName(
+            project.path,
+            source,
+            branch,
+            isMainWorktree
+          );
 
-        return {
-          id: project.id,
-          path: project.path,
-          name: displayName,
-          gitBranch: branch ?? undefined,
-          isMainWorktree,
-          source,
-          sessions: filteredSessions,
-          createdAt: project.createdAt,
-          mostRecentSession: project.mostRecentSession,
-        };
-      }));
+          return {
+            provider: project.provider ?? 'claude',
+            id: project.id,
+            path: project.path,
+            name: displayName,
+            gitBranch: branch ?? undefined,
+            isMainWorktree,
+            source,
+            sessions: filteredSessions,
+            createdAt: project.createdAt,
+            mostRecentSession: project.mostRecentSession,
+          };
+        })
+      );
 
       // Filter out worktrees with 0 visible sessions
       const nonEmptyWorktrees = worktrees.filter((wt) => wt.sessions.length > 0);
@@ -184,6 +187,7 @@ export class WorktreeGrouper {
       );
 
       repositoryGroups.push({
+        provider: group.projects[0].provider ?? 'claude',
         id: groupId,
         identity: group.identity,
         worktrees: nonEmptyWorktrees,

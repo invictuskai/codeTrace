@@ -22,10 +22,6 @@ import {
   SSH_SAVE_LAST_CONNECTION,
   SSH_STATUS,
   SSH_TEST,
-  UPDATER_CHECK,
-  UPDATER_DOWNLOAD,
-  UPDATER_INSTALL,
-  UPDATER_STATUS,
   WINDOW_CLOSE,
   WINDOW_IS_MAXIMIZED,
   WINDOW_MAXIMIZE,
@@ -66,6 +62,7 @@ import type {
   ElectronAPI,
   HttpServerStatus,
   NotificationTrigger,
+  SessionDetailOptions,
   SessionsByIdsOptions,
   SessionsPaginationOptions,
   SshConfigHostEntry,
@@ -144,8 +141,8 @@ const electronAPI: ElectronAPI = {
   findSessionById: (sessionId: string) => ipcRenderer.invoke(FIND_SESSION_BY_ID, sessionId),
   findSessionsByPartialId: (fragment: string) =>
     ipcRenderer.invoke(FIND_SESSIONS_BY_PARTIAL_ID, fragment),
-  getSessionDetail: (projectId: string, sessionId: string) =>
-    ipcRenderer.invoke('get-session-detail', projectId, sessionId),
+  getSessionDetail: (projectId: string, sessionId: string, options?: SessionDetailOptions) =>
+    ipcRenderer.invoke('get-session-detail', projectId, sessionId, options),
   getSessionMetrics: (projectId: string, sessionId: string) =>
     ipcRenderer.invoke('get-session-metrics', projectId, sessionId),
   getWaterfallData: (projectId: string, sessionId: string) =>
@@ -382,25 +379,6 @@ const electronAPI: ElectronAPI = {
     return (): void => {
       ipcRenderer.removeListener('todo-change', listener);
     };
-  },
-
-  // Updater API
-  updater: {
-    check: () => ipcRenderer.invoke(UPDATER_CHECK),
-    download: () => ipcRenderer.invoke(UPDATER_DOWNLOAD),
-    install: () => ipcRenderer.invoke(UPDATER_INSTALL),
-    onStatus: (callback: (event: unknown, status: unknown) => void): (() => void) => {
-      ipcRenderer.on(
-        UPDATER_STATUS,
-        callback as (event: Electron.IpcRendererEvent, ...args: unknown[]) => void
-      );
-      return (): void => {
-        ipcRenderer.removeListener(
-          UPDATER_STATUS,
-          callback as (event: Electron.IpcRendererEvent, ...args: unknown[]) => void
-        );
-      };
-    },
   },
 
   // SSH API
